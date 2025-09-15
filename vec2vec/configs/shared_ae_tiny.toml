@@ -1,0 +1,48 @@
+[general]
+dataset = "enron"            # or another small dataset key supported by load_streaming_embeddings
+unsup_emb = "gte"            # source/target flags must match your setup
+sup_emb   = "gtr"
+seed = 42
+epochs = 1                    # tiny run
+bs = 32                       # small batch size
+val_bs = 32
+val_size = 256                # small validation split
+n_embs_per_batch = 1
+max_seq_length = 64
+normalize_embeddings = true
+wandb_project = 'shared_ae'
+use_wandb = false
+save_dir = "runs/{}/"
+wandb_name = "shared_ae_tiny"
+
+# sampling/shuffling seeds
+train_dataset_seed = 123
+val_dataset_seed = 321
+sampling_seed = 777
+
+# points selection
+num_points = 1024             # uses first half for sup, second for unsup in train pipeline
+
+# optimizer
+lr = 1e-3
+warmup_length = 50
+gradient_accumulation_steps = 1
+max_grad_norm = 1.0
+mixed_precision = "no"
+
+# translator config
+style = "shared_ae"
+[translator]
+d_z = 256
+hidden = [512, 512]
+
+# loss weights
+[loss]
+lambda_rec  = 1.0
+lambda_cyc  = 1.0
+lambda_dist = 0.2
+lambda_stab = 0.1
+lambda_geo  = 0.1
+
+dist_kind = "sinkhorn"
+sinkhorn_eps = 0.1

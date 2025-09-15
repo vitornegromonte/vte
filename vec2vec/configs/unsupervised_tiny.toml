@@ -1,0 +1,61 @@
+[general]
+dataset = "enron"
+unsup_emb = "gte"
+sup_emb   = "gtr"
+seed = 42
+epochs = 1
+bs = 32
+val_bs = 32
+val_size = 256
+n_embs_per_batch = 1
+max_seq_length = 64
+normalize_embeddings = true
+wandb_project = 'unsupervised_disc'
+use_wandb = false
+save_dir = "runs/{}/"
+wandb_name = "unsup_tiny"
+
+train_dataset_seed = 123
+val_dataset_seed = 321
+sampling_seed = 777
+num_points = 1024
+
+# model style (baseline adversarial path already supported)
+style = "res_mlp"
+d_adapter = 768                  # will be aligned to encoder dims by adapters
+latent_dims = 256
+transform_depth = 2
+d_transform = 512
+d_hidden = 512
+norm_style = "batch"
+weight_init = "kaiming"
+depth = 2
+
+# GAN and losses
+[gan]
+enabled = true
+
+[loss]
+loss_coefficient_rec = 9.8
+loss_coefficient_reverse_rec = 1.0
+loss_coefficient_vsp = 1.0
+loss_coefficient_cc_vsp = 0.15
+loss_coefficient_cc_rec = 0.15
+loss_coefficient_cc_trans = 0.15
+loss_coefficient_gen = 1.0
+loss_coefficient_latent_gen = 1.0
+loss_coefficient_similarity_gen = 1.0
+
+# optimizer
+lr = 1e-3
+warmup_length = 50
+gradient_accumulation_steps = 1
+max_grad_norm = 1.0
+mixed_precision = "no"
+
+gan_style = "vanilla"
+# discriminators
+disc_lr = 5e-4
+eps = 1e-8
+disc_dim = 512
+disc_depth = 2
