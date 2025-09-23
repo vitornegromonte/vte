@@ -1,48 +1,84 @@
 [general]
-dataset = "enron"            # or another small dataset key supported by load_streaming_embeddings
-unsup_emb = "gte"            # source/target flags must match your setup
-sup_emb   = "gtr"
 seed = 42
-epochs = 1                    # tiny run
-bs = 32                       # small batch size
-val_bs = 32
-val_size = 256                # small validation split
-n_embs_per_batch = 1
-max_seq_length = 64
-normalize_embeddings = true
-wandb_project = 'shared_ae'
-use_wandb = false
-save_dir = "runs/{}/"
-wandb_name = "shared_ae_tiny"
-
-# sampling/shuffling seeds
+sampling_seed = 777
 train_dataset_seed = 123
 val_dataset_seed = 321
-sampling_seed = 777
+normalize_embeddings = true
+mixed_precision = 'no'
+weight_init = 'kaiming'
+dataset = 'nq'
+max_seq_length = 64
+unsup_emb = 'gte'
+sup_emb = 'gtr'
+n_embs_per_batch = 1
+finetune_mode = false
+noise_level = 0.0
+num_points = 1000
 
-# points selection
-num_points = 1024             # uses first half for sup, second for unsup in train pipeline
-
-# optimizer
-lr = 1e-3
-warmup_length = 50
-gradient_accumulation_steps = 1
-max_grad_norm = 1.0
-mixed_precision = "no"
-
-# translator config
-style = "shared_ae"
 [translator]
-d_z = 256
-hidden = [512, 512]
+style = 'shared_ae'
+norm_style = 'batch'
+depth = 3
+transform_depth = 2
+d_adapter = 768
+d_hidden = 768
+d_transform = 512
+use_small_output_adapters = false
+use_residual_adapters = true
+d_z = 512
 
-# loss weights
-[loss]
+[discriminator]
+gan_style = "vanilla"
+disc_depth = 2
+disc_dim = 512
+use_residual = true
+
+[train]
+bs = 32
+epochs = 2
+gradient_accumulation_steps = 1
+lr = 1e-3
+no_scheduler = false
+max_grad_norm = 1.0
+loss_coefficient_reverse_rec = 0.0
+loss_coefficient_rec = 1.0
+loss_coefficient_vsp = 1.0
+loss_coefficient_cc_trans = 0.15
+loss_coefficient_cc_rec = 0.15
+loss_coefficient_cc_vsp = 0.15
+loss_coefficient_r1_penalty = 0.0
+warmup_length = 200
+patience = 3
+min_delta = 0.0
+min_epochs = 1
 lambda_rec  = 1.0
 lambda_cyc  = 1.0
 lambda_dist = 0.2
 lambda_stab = 0.1
-lambda_geo  = 0.1
+lambda_geo  = 0.05
 
-dist_kind = "sinkhorn"
 sinkhorn_eps = 0.1
+[gan]
+disc_lr = 5e-4
+eps = 1e-8
+smooth = 0.9
+loss_coefficient_disc = 1.0
+loss_coefficient_gen = 1.0
+loss_coefficient_latent_gen = 1.0
+loss_coefficient_similarity_gen = 0.0
+
+[eval]
+val_size = 256
+val_bs = 32
+top_k_size = 256
+top_k_batches = 2
+k = 16
+heatmap_size = 32
+
+[logging]
+use_wandb = false
+wandb_project = 'shared_ae'
+wandb_name = 'shared_ae_tiny'
+load_dir = './runs/'
+save_dir = './runs/{}/'
+force_dump = true

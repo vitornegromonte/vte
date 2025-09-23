@@ -502,7 +502,7 @@ def main():
         latent_disc_opt = torch.optim.Adam(latent_disc.parameters(), lr=cfg.disc_lr, eps=cfg.eps, betas=(0.5, 0.999))
         ######################################################################################
         similarity_disc = Discriminator(
-            latent_dim=cfg.bs,
+            latent_dim=2 * cfg.bs,
             discriminator_dim=cfg.disc_dim,
             depth=cfg.disc_depth,
             weight_init=cfg.weight_init
