@@ -238,6 +238,28 @@ def training_loop_shared_ae(
     model_save_dir = os.path.join(save_dir, 'model.pt')
 
     translator.train()
+
+    # ------------------------------------------------------------------
+    # Gather coefficient hyperparameters (with safe defaults) for logging.
+    lambda_rec  = getattr(cfg, 'lambda_rec', 1.0)
+    lambda_cyc  = getattr(cfg, 'lambda_cyc', 1.0)
+    lambda_dist = getattr(cfg, 'lambda_dist', 0.2)
+    lambda_stab = getattr(cfg, 'lambda_stab', 0.1)
+    lambda_geo  = getattr(cfg, 'lambda_geo', 0.05)
+    sinkhorn_eps = getattr(cfg, 'sinkhorn_eps', 0.1)
+
+    if accelerator.is_main_process:
+        print(
+            f"[SharedAE Coeffs] rec={lambda_rec} | cyc={lambda_cyc} | dist={lambda_dist} | "
+            f"stab={lambda_stab} | geo={lambda_geo} | sinkhorn_eps={sinkhorn_eps}"
+        )
+    # We'll only explicitly log the coefficient scalars on the first batch to avoid repetition.
+    logged_coeffs_once = False
+    # ------------------------------------------------------------------
+    # Epoch-level accumulators for average reporting
+    epoch_sums = {}
+    batch_count = 0
+
     for i, (sup_batch, unsup_batch) in enumerate(dataloader_pbar):
         if max_num_batches is not None and i >= max_num_batches:
             print(f"Early stopping at {i} batches")
@@ -277,10 +299,61 @@ def training_loop_shared_ae(
             metrics = {f"loss/{k}": (v.item() if hasattr(v, 'item') else float(v)) for k, v in losses.items()}
             metrics["loss/total"] = total.item() if hasattr(total, 'item') else float(total)
             metrics["learning_rate"] = opt.param_groups[0]["lr"]
+
+            # Include weighted components (effective contribution) for interpretability.
+            metrics["loss_w/rec"] = lambda_rec * (losses['rec_s'].item() + losses['rec_t'].item())
+            metrics["loss_w/cyc"] = lambda_cyc * (losses['cyc_z_s'].item() + losses['cyc_z_t'].item())
+            metrics["loss_w/dist"] = lambda_dist * (losses['ot_s'].item() + losses['ot_t'].item())
+            metrics["loss_w/stab"] = lambda_stab * losses['vic'].item()
+            metrics["loss_w/geo"] = lambda_geo * (losses['lap'].item() + losses['triplet'].item())
+
+            # Log coefficients once per call of this training loop (i == 0)
+            if (i == 0) and (not logged_coeffs_once):
+                coeff_metrics = {
+                    "coef/lambda_rec": lambda_rec,
+                    "coef/lambda_cyc": lambda_cyc,
+                    "coef/lambda_dist": lambda_dist,
+                    "coef/lambda_stab": lambda_stab,
+                    "coef/lambda_geo": lambda_geo,
+                    "coef/sinkhorn_eps": sinkhorn_eps,
+                }
+                for k, v in coeff_metrics.items():
+                    logger.logkv(k, v)
+                logged_coeffs_once = True
+
+            # Update epoch accumulators (raw component losses only)
+            for lk, lv in losses.items():
+                epoch_sums[lk] = epoch_sums.get(lk, 0.0) + (lv.item() if hasattr(lv, 'item') else float(lv))
+            epoch_sums['total'] = epoch_sums.get('total', 0.0) + metrics['loss/total']
+            batch_count += 1
+
             for k, v in metrics.items():
                 logger.logkv(k, v)
             logger.dumpkvs(force=(hasattr(cfg, 'force_dump') and cfg.force_dump))
             dataloader_pbar.set_postfix({k: round(v, 4) for k, v in metrics.items() if 'total' in k or k.endswith('rec') or k.endswith('cyc')})
+
+    # After loop: log epoch averages for interpretability
+    if batch_count > 0:
+        avg_metrics = {}
+        for k, v in epoch_sums.items():
+            if k == 'total':
+                avg_metrics['epoch_avg/loss/total'] = v / batch_count
+            else:
+                avg_metrics[f'epoch_avg/loss/{k}'] = v / batch_count
+        # Grouped averages
+        try:
+            avg_metrics['epoch_avg/loss/rec_total'] = (epoch_sums.get('rec_s',0)+epoch_sums.get('rec_t',0)) / batch_count
+            avg_metrics['epoch_avg/loss/cyc_total'] = (epoch_sums.get('cyc_z_s',0)+epoch_sums.get('cyc_z_t',0)) / batch_count
+            avg_metrics['epoch_avg/loss/ot_total']  = (epoch_sums.get('ot_s',0)+epoch_sums.get('ot_t',0)) / batch_count
+            avg_metrics['epoch_avg/loss/geo_total'] = (epoch_sums.get('lap',0)+epoch_sums.get('triplet',0)) / batch_count
+            avg_metrics['epoch_avg/loss/stab_vic']  = epoch_sums.get('vic',0) / batch_count
+        except Exception:
+            pass
+        if accelerator.is_main_process:
+            print("[SharedAE Epoch Averages] " + ' | '.join(f"{k.split('/')[-1]}={round(v,4)}" for k,v in avg_metrics.items()))
+        for k, v in avg_metrics.items():
+            logger.logkv(k, v)
+        logger.dumpkvs(force=(hasattr(cfg, 'force_dump') and cfg.force_dump))
 
     with open(save_dir + 'config.toml', 'w') as f:
         toml.dump(cfg.__dict__, f)
