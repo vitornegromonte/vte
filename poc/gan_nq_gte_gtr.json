@@ -1,0 +1,43 @@
+// vec2vec
+{
+    "recons": {
+        "rec_gtr_cos": 0.09599355235695839,
+        "rec_gte_cos": 0.023982157930731773
+    },
+    "trans": {
+        "gte_gtr_mse": 0.0025669324677437544,
+        "gte_gtr_cos": 0.01429802249185741,
+        "gte_gtr_std": 0.028942279517650604,
+        "gte_gtr_vsp": 0.16389447823166847,
+        "gte_gtr_cos_var": 0.001103989314287901,
+        "gte_gtr_vsp_var": 0.010556413792073727,
+        "gte_gtr_cos_se": 0.0005191614789095678,
+        "gte_gtr_vsp_se": 0.0016053814066929702,
+        "gtr_gte_mse": 0.0026592992362566292,
+        "gtr_gte_cos": -0.02117083966732025,
+        "gtr_gte_std": 0.027937575709074736,
+        "gtr_gte_vsp": 0.33991309255361557,
+        "gtr_gte_cos_var": 0.000979313495918177,
+        "gtr_gte_vsp_var": 0.008275801548734307,
+        "gtr_gte_cos_se": 0.0004889685153099314,
+        "gtr_gte_vsp_se": 0.0014214286343267333
+    },
+    "heatmap": {
+        "gte_gtr_top_1_acc (avg. 4 batches)": 0.0,
+        "gte_gtr_top_16_acc (avg. 4 batches)": 0.013427734375,
+        "gte_gtr_rank (avg. 4 batches)": 533.341796875,
+        "gte_gtr_rank_var (avg. 4 batches)": 87346.1225104332,
+        "gtr_gte_top_1_acc (avg. 4 batches)": 0.001220703125,
+        "gtr_gte_top_16_acc (avg. 4 batches)": 0.015869140625,
+        "gtr_gte_rank (avg. 4 batches)": 510.28662109375,
+        "gtr_gte_rank_var (avg. 4 batches)": 86907.93410730362,
+        "gte_gtr_heatmap_top_1_acc (avg. 4 batches)": 0.0,
+        "gte_gtr_heatmap_top_16_acc (avg. 4 batches)": 0.234375,
+        "gtr_gte_heatmap_top_1_acc (avg. 4 batches)": 0.015625,
+        "gtr_gte_heatmap_top_16_acc (avg. 4 batches)": 0.265625,
+        "gte_gtr_rank_se (avg. 4 batches)": 4.617871472986632,
+        "gtr_gte_rank_se (avg. 4 batches)": 4.606273694692481
+    },
+    "text_recons": {},
+    "text_trans": {}
+}

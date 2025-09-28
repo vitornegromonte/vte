@@ -6,7 +6,7 @@ val_dataset_seed = 321
 normalize_embeddings = true
 mixed_precision = 'no'
 weight_init = 'kaiming'
-dataset = "enron"
+dataset = 'nq'
 max_seq_length = 64
 unsup_emb = 'gte'
 sup_emb = 'gtr'
@@ -70,8 +70,8 @@ heatmap_size = 64
 
 [logging]
 use_wandb = false
-wandb_project = 'unsupervised_disc'
-wandb_name = 'unsup_tiny'
+wandb_project = 'unsup-mt'
+wandb_name = 'gan_stdrt'
 load_dir = './runs/'
 save_dir = './runs/{}/'
 force_dump = true

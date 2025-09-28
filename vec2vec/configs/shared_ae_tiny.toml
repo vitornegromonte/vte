@@ -56,8 +56,8 @@ lambda_cyc  = 1.0
 lambda_dist = 0.2
 lambda_stab = 0.1
 lambda_geo  = 0.05
-
 sinkhorn_eps = 0.1
+
 [gan]
 disc_lr = 5e-4
 eps = 1e-8
@@ -76,9 +76,9 @@ k = 16
 heatmap_size = 32
 
 [logging]
-use_wandb = false
-wandb_project = 'shared_ae'
-wandb_name = 'shared_ae_tiny'
+use_wandb = true
+wandb_project = 'unsup-mt'
+wandb_name = 'sae_stdrt'
 load_dir = './runs/'
 save_dir = './runs/{}/'
 force_dump = true
