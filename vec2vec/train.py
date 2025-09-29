@@ -273,17 +273,18 @@ def training_loop_shared_ae(
 
             out = translator(x, y)
 
-            use_ot = True if hasattr(cfg, 'dist_kind') else True
-            ot_eps = getattr(cfg, 'sinkhorn_eps', 0.1)
+            # Use the same coefficients we printed above for consistency
+            use_ot = True
+            ot_eps = sinkhorn_eps
             total, losses = compute_losses(
                 out,
                 x,
                 y,
-                lambda_rec=getattr(cfg, 'lambda_rec', 1.0),
-                lambda_cyc=getattr(cfg, 'lambda_cyc', 1.0),
-                lambda_dist=getattr(cfg, 'lambda_dist', 0.5),
-                lambda_stab=getattr(cfg, 'lambda_stab', 0.1),
-                lambda_geo=getattr(cfg, 'lambda_geo', 0.2),
+                lambda_rec=lambda_rec,
+                lambda_cyc=lambda_cyc,
+                lambda_dist=lambda_dist,
+                lambda_stab=lambda_stab,
+                lambda_geo=lambda_geo,
                 use_ot=use_ot,
                 ot_eps=ot_eps,
             )
@@ -360,9 +361,49 @@ def training_loop_shared_ae(
     torch.save(accelerator.unwrap_model(translator).state_dict(), model_save_dir)
 
 
+def _resolve_train_config_name(stem: str) -> str:
+    """Resolve a config stem to a concrete path under configs/ with fuzzy matching.
+
+    Returns absolute file path to the matched TOML config.
+    """
+    # If a direct path is provided, respect it
+    if stem.endswith('.toml') or os.path.sep in stem:
+        abs_path = stem if os.path.isabs(stem) else os.path.join(os.getcwd(), stem)
+        if os.path.exists(abs_path):
+            return abs_path
+        raise FileNotFoundError(f"Config path '{stem}' not found (resolved to {abs_path}).")
+
+    base_dir = os.path.dirname(__file__)
+    cfg_dir = os.path.join(base_dir, 'configs')
+    ablate_dir = os.path.join(base_dir, 'runs', 'ablate_shared_ae')
+    # Try exact
+    exact = os.path.join(cfg_dir, f"{stem}.toml")
+    if os.path.exists(exact):
+        return exact
+    # Fuzzy: prefix then substring in configs/ then in runs/ablate_shared_ae/
+    search_dirs = [(cfg_dir, 'configs'), (ablate_dir, 'ablate')]
+    for directory, tag in search_dirs:
+        if not os.path.isdir(directory):
+            continue
+        files = [f for f in os.listdir(directory) if f.endswith('.toml')]
+        prefix_matches = [f for f in files if f.startswith(stem)]
+        if len(prefix_matches) == 1:
+            return os.path.join(directory, prefix_matches[0])
+        if not prefix_matches:
+            substr = [f for f in files if stem in f]
+            if len(substr) == 1:
+                return os.path.join(directory, substr[0])
+            elif len(substr) > 1:
+                raise FileNotFoundError(f"Ambiguous config stem '{stem}' in {tag}. Candidates: {substr}")
+        elif len(prefix_matches) > 1:
+            raise FileNotFoundError(f"Ambiguous config stem '{stem}' in {tag}. Candidates: {prefix_matches}")
+    raise FileNotFoundError(f"Config '{stem}.toml' not found under {cfg_dir} (tried fuzzy match as well).")
+
+
 def main():
     os.environ["TOKENIZERS_PARALLELISM"] = "0"
-    cfg = toml.load(f'configs/{argv[1]}.toml')
+    cfg_path = _resolve_train_config_name(argv[1])
+    cfg = toml.load(cfg_path)
     unknown_cfg = read_args(argv)
     cfg = SimpleNamespace(**{**{k: v for d in cfg.values() for k, v in d.items()}, **unknown_cfg})
 
@@ -676,6 +717,9 @@ def main():
     else:
         early_stopping = False
 
+    # Allow explicit cap on the number of batches per epoch via cfg.max_num_batches
+    forced_max_batches = getattr(cfg, 'max_num_batches', None)
+
     for epoch in range(max_num_epochs):
         if cfg.style != 'shared_ae' and use_val_set:
             with torch.no_grad(), accelerator.autocast():
@@ -713,9 +757,9 @@ def main():
                     print(f"Saving model (counter = {early_stopper.counter})... {score} < {early_stopper.opt_val} is the best score so far...")
                     save_everything(cfg, translator, opt, [gan, sup_gan, latent_gan, similarity_gan], save_dir)
 
-        max_num_batches = None
+        max_num_batches = forced_max_batches
         print(f"Epoch", epoch, "max_num_batches", max_num_batches, "max_num_epochs", max_num_epochs)
-        if epoch + 1 >= max_num_epochs:
+        if max_num_batches is None and (epoch + 1 >= max_num_epochs):
             max_num_batches = max(1, (cfg.epochs - epoch) * len(supset) // cfg.bs)
             print(f"Setting max_num_batches to {max_num_batches}")
 
