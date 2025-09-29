@@ -1,77 +1,76 @@
 [general]
-seed = 42
-sampling_seed = 777
-train_dataset_seed = 123
-val_dataset_seed = 321
+seed = 5
+sampling_seed = 5
+train_dataset_seed = 10
+val_dataset_seed = 42
 normalize_embeddings = true
-mixed_precision = 'no'
+mixed_precision = 'fp16'
 weight_init = 'kaiming'
-dataset = 'nq'
+dataset = "nq"
 max_seq_length = 64
 unsup_emb = 'gte'
 sup_emb = 'gtr'
 n_embs_per_batch = 1
 finetune_mode = false
 noise_level = 0.0
-num_points = 1000
 
 [translator]
 style = 'res_mlp'
 norm_style = 'batch'
-depth = 2
-transform_depth = 2
-d_adapter = 768
-d_hidden = 512
-d_transform = 512
+depth = 3
+transform_depth = 4
+d_adapter = 1024
+d_hidden = 1024
+d_transform = 1024
 use_small_output_adapters = false
 use_residual_adapters = true
 
 [discriminator]
-gan_style = "vanilla"
-disc_depth = 2
-disc_dim = 512
+gan_style = "least_squares"
+disc_depth = 5
+disc_dim = 1024
 use_residual = true
 
 [train]
-bs = 32
-epochs = 2
+bs = 256
 gradient_accumulation_steps = 1
-lr = 1e-3
+lr = 2e-5
 no_scheduler = true
-max_grad_norm = 1.0
-loss_coefficient_reverse_rec = 1.0
-loss_coefficient_rec = 9.8
+max_grad_norm = 1000.0
+loss_coefficient_reverse_rec = 0.0
+loss_coefficient_rec = 1.0
 loss_coefficient_vsp = 1.0
-loss_coefficient_cc_trans = 0.15
-loss_coefficient_cc_rec = 0.15
-loss_coefficient_cc_vsp = 0.15
+loss_coefficient_cc_trans = 10.0
+loss_coefficient_cc_rec = 0.0
+loss_coefficient_cc_vsp = 10.0
 loss_coefficient_r1_penalty = 0.0
-warmup_length = 50
+warmup_length = 2000
 patience = 20
 min_delta = 0.0
-min_epochs = 1
+min_epochs = 80
+
 
 [gan]
-disc_lr = 5e-4
-eps = 1e-8
+disc_lr = 1e-5
+eps = 6.25e-10
 smooth = 0.9
 loss_coefficient_disc = 1.0
 loss_coefficient_gen = 1.0
 loss_coefficient_latent_gen = 1.0
-loss_coefficient_similarity_gen = 1.0
+loss_coefficient_similarity_gen = 0.0
 
 [eval]
-val_size = 256
-val_bs = 32
-top_k_size = 256
-top_k_batches = 2
+val_size = 4096
+val_bs = 1024
+top_k_size = 1024
+top_k_batches = 4
 k = 16
 heatmap_size = 64
 
 [logging]
-use_wandb = false
-wandb_project = 'unsup-mt'
-wandb_name = 'gan_stdrt'
-load_dir = './runs/'
-save_dir = './runs/{}/'
+use_wandb = true
+wandb_project = 'unsupervised_disc'
+wandb_name = 'unsupervised'
+load_dir = './finetuning_unsupervised/n:100000,e:10,s:n_double,d:4,d:4,d:64/'
+save_dir = './finetuning_unsupervised/{}/'
 force_dump = true
