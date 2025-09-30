@@ -1,8 +1,8 @@
 [general]
 seed = 42
-sampling_seed = 777
-train_dataset_seed = 123
-val_dataset_seed = 321
+sampling_seed = 42
+train_dataset_seed = 10
+val_dataset_seed = 10
 normalize_embeddings = true
 mixed_precision = 'no'
 weight_init = 'kaiming'
@@ -13,16 +13,18 @@ sup_emb = 'gtr'
 n_embs_per_batch = 1
 finetune_mode = false
 noise_level = 0.0
-num_points = 1000
+num_points = 100000
+epochs = 10
 
 [translator]
 style = 'shared_ae'
 norm_style = 'batch'
 depth = 3
-transform_depth = 2
+transform_depth = 6
 d_adapter = 768
 d_hidden = 768
 d_transform = 512
+n_embs_per_batch = 1
 use_small_output_adapters = false
 use_residual_adapters = true
 d_z = 512
@@ -34,20 +36,20 @@ disc_dim = 512
 use_residual = true
 
 [train]
-bs = 32
-epochs = 2
+bs = 256
 gradient_accumulation_steps = 1
-lr = 1e-3
+lr = 5e-5
 no_scheduler = false
-max_grad_norm = 1.0
+max_grad_norm = 1000.0
 loss_coefficient_reverse_rec = 0.0
 loss_coefficient_rec = 1.0
 loss_coefficient_vsp = 1.0
-loss_coefficient_cc_trans = 0.15
-loss_coefficient_cc_rec = 0.15
-loss_coefficient_cc_vsp = 0.15
+loss_coefficient_cc_trans = 10.0
+loss_coefficient_cc_rec = 0.0
+loss_coefficient_cc_vsp = 10.0
 loss_coefficient_r1_penalty = 0.0
-warmup_length = 200
+warmup_length = 2000
+
 patience = 3
 min_delta = 0.0
 min_epochs = 1
@@ -59,8 +61,8 @@ lambda_geo  = 0.05
 sinkhorn_eps = 0.1
 
 [gan]
-disc_lr = 5e-4
-eps = 1e-8
+disc_lr = 2e-5
+eps = 6.25e-10
 smooth = 0.9
 loss_coefficient_disc = 1.0
 loss_coefficient_gen = 1.0
@@ -68,17 +70,17 @@ loss_coefficient_latent_gen = 1.0
 loss_coefficient_similarity_gen = 0.0
 
 [eval]
-val_size = 256
-val_bs = 32
-top_k_size = 256
-top_k_batches = 2
+val_size = 4096
+val_bs = 1024
+top_k_size = 1024
+top_k_batches = 4
 k = 16
-heatmap_size = 32
+heatmap_size = 64
 
 [logging]
 use_wandb = true
 wandb_project = 'unsup-mt'
-wandb_name = 'sae_stdrt'
+wandb_name = 'shared_ae'
 load_dir = './runs/'
 save_dir = './runs/{}/'
 force_dump = true
