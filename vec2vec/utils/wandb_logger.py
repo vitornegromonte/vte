@@ -1,4 +1,5 @@
 from typing import Dict, Iterable, Union
+import os
 import wandb
 import torch
 
@@ -46,11 +47,36 @@ class TensorRunningAverages:
 class Logger:
     def __init__(self, **kws):
         self.vals = TensorRunningAverages()
-        self.enabled = (not kws.pop("dummy", False)) and (get_rank() == 0)
+        # Base enablement: respect explicit dummy flag and rank 0 only
+        user_disabled = kws.pop("dummy", False)
+        base_enabled = (not user_disabled) and (get_rank() == 0)
+
+        # Auto non-interactive guard: if running on Kaggle without an API key, or
+        # if WANDB is explicitly disabled/offline via env, avoid interactive prompts.
+        is_kaggle = any(e in os.environ for e in ("KAGGLE_KERNEL_RUN_TYPE", "KAGGLE_URL_BASE"))
+        has_api_key = bool(os.environ.get("WANDB_API_KEY"))
+        env_disabled = os.environ.get("WANDB_DISABLED", "").lower() in ("1", "true", "yes")
+        env_offline = os.environ.get("WANDB_MODE", "").lower() == "offline"
+        allow_prompt = os.environ.get("WANDB_ALLOW_PROMPT", "").lower() in ("1", "true", "yes")
+
+        auto_disable = (env_disabled or env_offline or (is_kaggle and not has_api_key)) and (not allow_prompt)
+
+        self.enabled = base_enabled and (not auto_disable)
+
         if self.enabled:
             wandb.init(**kws)
         else:
-            print("Wandb is disabled")
+            reason = (
+                "WANDB_DISABLED env"
+                if env_disabled else (
+                    "WANDB_MODE=offline"
+                    if env_offline else (
+                        "Kaggle without WANDB_API_KEY"
+                        if (is_kaggle and not has_api_key) else "disabled"
+                    )
+                )
+            )
+            print(f"Wandb is disabled ({reason})")
             wandb.init(mode="disabled")
         self.log_frequency = 250
         self.log_step = 0
