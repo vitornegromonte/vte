@@ -15,7 +15,7 @@ finetune_mode = false
 noise_level = 0.0
 num_points = 100000
 epochs = 10
-
+min_epochs = 1
 [translator]
 style = 'res_mlp'
 norm_style = 'batch'
