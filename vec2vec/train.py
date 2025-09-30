@@ -1,4 +1,6 @@
 import os
+# Avoid importing torchvision from transformers (prevents torchvision::nms errors on CPU-only/mismatched envs)
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 import random
 import toml
 from sys import argv

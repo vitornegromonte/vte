@@ -1,5 +1,8 @@
 import nltk
-import evaluate
+try:
+    import evaluate  # Optional; heavy import may pull transformers/torchvision
+except Exception:
+    evaluate = None
 
 import torch
 import torch.nn.functional as F
@@ -83,6 +86,8 @@ def _calculate_token_f1(predictions, references):
 
 def calculate_scores(score_flag, target_text, translation_text):
     if score_flag == 'bleu':
+        if evaluate is None:
+            raise ImportError("The 'evaluate' package is required for BLEU. Install with: pip install evaluate sacrebleu")
         bleu = evaluate.load("sacrebleu")
         score_func = lambda p, r: bleu.compute(predictions=[p], references=[r])['score']
     elif score_flag == 'f1':

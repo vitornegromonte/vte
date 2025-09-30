@@ -1,4 +1,5 @@
 import os
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 import random
 import toml
 import json
