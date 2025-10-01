@@ -1,8 +1,8 @@
 [general]
 seed = 42
-sampling_seed = 42
-train_dataset_seed = 10
-val_dataset_seed = 10
+sampling_seed = 777
+train_dataset_seed = 123
+val_dataset_seed = 321
 normalize_embeddings = true
 mixed_precision = 'no'
 weight_init = 'kaiming'
@@ -19,8 +19,8 @@ epochs = 10
 [translator]
 style = 'shared_ae'
 norm_style = 'batch'
-depth = 3
-transform_depth = 6
+depth = 10
+transform_depth = 2
 d_adapter = 768
 d_hidden = 768
 d_transform = 512
@@ -38,7 +38,7 @@ use_residual = true
 [train]
 bs = 256
 gradient_accumulation_steps = 1
-lr = 5e-5
+lr = 1e-3
 no_scheduler = false
 max_grad_norm = 1000.0
 loss_coefficient_reverse_rec = 0.0
