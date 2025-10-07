@@ -53,12 +53,12 @@ warmup_length = 2000
 patience = 3
 min_delta = 0.0
 min_epochs = 1
-lambda_rec  = 0.1
-lambda_cyc  = 1.0
-lambda_dist = 0.2
-lambda_stab = 1.0
-lambda_geo  = 0.05
-sinkhorn_eps = 0.1
+lambda_rec  = 2.0
+lambda_cyc  = 0.0
+lambda_dist = 0.0
+lambda_stab = 0.0
+lambda_geo  = 0.0
+sinkhorn_eps = 0.0
 
 [gan]
 disc_lr = 2e-5
@@ -79,7 +79,7 @@ heatmap_size = 64
 
 [logging]
 use_wandb = true
-wandb_project = 'unsup-mt'
+wandb_project = 'sanity_check-SAE'
 wandb_name = 'shared_ae'
 load_dir = './runs/'
 save_dir = './runs/{}/'
