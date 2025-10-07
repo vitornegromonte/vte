@@ -36,7 +36,7 @@ disc_dim = 512
 use_residual = true
 
 [train]
-bs = 512
+bs = 1024
 gradient_accumulation_steps = 1
 lr = 1e-3
 no_scheduler = false
