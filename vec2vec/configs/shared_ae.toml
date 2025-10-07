@@ -19,7 +19,7 @@ epochs = 10
 [translator]
 style = 'shared_ae'
 norm_style = 'layer'
-depth = 10
+depth = 16
 transform_depth = 2
 d_adapter = 768
 d_hidden = 512
@@ -27,7 +27,7 @@ d_transform = 512
 n_embs_per_batch = 1
 use_small_output_adapters = false
 use_residual_adapters = true
-d_z = 512
+d_z = 256
 
 [discriminator]
 gan_style = "vanilla"
@@ -36,7 +36,7 @@ disc_dim = 512
 use_residual = true
 
 [train]
-bs = 256
+bs = 512
 gradient_accumulation_steps = 1
 lr = 1e-3
 no_scheduler = false
@@ -53,11 +53,11 @@ warmup_length = 2000
 patience = 3
 min_delta = 0.0
 min_epochs = 10
-lambda_rec  = 1.0
-lambda_cyc  = 0.0
+lambda_rec  = 2.0
+lambda_cyc  = 2.0
 lambda_dist = 0.0
 lambda_stab = 0.01
-lambda_geo  = 0.0
+lambda_geo  = 0.01
 sinkhorn_eps = 0.1
 
 [gan]
