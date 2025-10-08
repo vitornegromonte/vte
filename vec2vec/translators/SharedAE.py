@@ -151,10 +151,10 @@ class SharedAETranslator(nn.Module):
         hidden_dim=1024, 
         depth=3):
         super().__init__()
-        self.E_s = MLP(d_s, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, initialization='orthogonal')
-        self.D_s = MLP(d_z, d_s, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, initialization='orthogonal')
-        self.E_t = MLP(d_t, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, initialization='orthogonal')
-        self.D_t = MLP(d_z, d_t, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, initialization='orthogonal')
+        self.E_s = MLP(d_s, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, weight_init='orthogonal')
+        self.D_s = MLP(d_z, d_s, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, weight_init='orthogonal')
+        self.E_t = MLP(d_t, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, weight_init='orthogonal')
+        self.D_t = MLP(d_z, d_t, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, weight_init='orthogonal')
 
         self.z_norm = nn.LayerNorm(d_z)
 
