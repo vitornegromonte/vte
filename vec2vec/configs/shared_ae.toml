@@ -19,7 +19,7 @@ epochs = 10
 [translator]
 style = 'shared_ae'
 norm_style = 'layer'
-depth = 16
+depth = 10
 transform_depth = 2
 d_adapter = 768
 d_hidden = 512

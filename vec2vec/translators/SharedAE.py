@@ -151,10 +151,10 @@ class SharedAETranslator(nn.Module):
         hidden_dim=1024, 
         depth=3):
         super().__init__()
-        self.E_s = MLP(d_s, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU)
-        self.D_s = MLP(d_z, d_s, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU)
-        self.E_t = MLP(d_t, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU)
-        self.D_t = MLP(d_z, d_t, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU)
+        self.E_s = MLP(d_s, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, initialization='orthogonal')
+        self.D_s = MLP(d_z, d_s, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, initialization='orthogonal')
+        self.E_t = MLP(d_t, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, initialization='orthogonal')
+        self.D_t = MLP(d_z, d_t, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, initialization='orthogonal')
 
         self.z_norm = nn.LayerNorm(d_z)
 
@@ -186,13 +186,19 @@ def cyc_z_loss(z: torch.Tensor, z_cyc: torch.Tensor, reduction: str = "mean") ->
     return F.mse_loss(z_cyc, z, reduction=reduction)
 
 #  VICReg (anti-collapse) 
-def vicreg(z1: torch.Tensor, z2: torch.Tensor, *, sim_coeff=25.0, var_coeff=25.0, cov_coeff=1.0, eps=1e-4) -> torch.Tensor:
+def vicreg(z1: torch.Tensor, z2: torch.Tensor, *, sim_coeff=1.0, var_coeff=1.0, cov_coeff=0.1, eps=1e-3) -> torch.Tensor:
     """VICReg-style composite loss between two views z1,z2. Returns scalar.
 
     - invariance (sim): mean squared error between z1 and z2
     - variance: hinge on std per-dim to encourage non-collapse
     - covariance: off-diagonal Frobenius norm of covariance matrix
-    Reference: VICReg paper (something similar in spirit).
+    
+    Args:
+        z1, z2: (B, D) two batches of embeddings
+        sim_coeff, var_coeff, cov_coeff: weights for each loss term
+        eps: small value for numerical stability
+    Returns:
+        scalar loss
     """
     assert z1.shape == z2.shape, "z1 and z2 must have same shape"
     # Invariance (MSE)
