@@ -240,8 +240,7 @@ def training_loop_shared_ae(
     model_save_dir = os.path.join(save_dir, 'model.pt')
 
     translator.train()
-
-    # ------------------------------------------------------------------
+    
     # Gather coefficient hyperparameters (with safe defaults) for logging.
     lambda_rec  = getattr(cfg, 'lambda_rec', 1.0)
     lambda_cyc  = getattr(cfg, 'lambda_cyc', 1.0)
@@ -255,10 +254,9 @@ def training_loop_shared_ae(
             f"[SharedAE Coeffs] rec={lambda_rec} | cyc={lambda_cyc} | dist={lambda_dist} | "
             f"stab={lambda_stab} | geo={lambda_geo} | sinkhorn_eps={sinkhorn_eps}"
         )
-    # We'll only explicitly log the coefficient scalars on the first batch to avoid repetition.
+        
     logged_coeffs_once = False
-    # ------------------------------------------------------------------
-    # Epoch-level accumulators for average reporting
+
     epoch_sums = {}
     batch_count = 0
 
@@ -286,7 +284,6 @@ def training_loop_shared_ae(
                 lambda_cyc=lambda_cyc,
                 lambda_dist=lambda_dist,
                 lambda_stab=lambda_stab,
-                lambda_geo=lambda_geo,
                 use_ot=use_ot,
                 ot_eps=ot_eps,
             )
@@ -308,7 +305,6 @@ def training_loop_shared_ae(
             metrics["loss_w/cyc"] = lambda_cyc * (losses['cyc_z_s'].item() + losses['cyc_z_t'].item())
             metrics["loss_w/dist"] = lambda_dist * (losses['ot_s'].item() + losses['ot_t'].item())
             metrics["loss_w/stab"] = lambda_stab * losses['vic'].item()
-            metrics["loss_w/geo"] = lambda_geo * (losses['lap'].item() + losses['triplet'].item())
 
             # Log coefficients once per call of this training loop (i == 0)
             if (i == 0) and (not logged_coeffs_once):
@@ -348,7 +344,6 @@ def training_loop_shared_ae(
             avg_metrics['epoch_avg/loss/rec_total'] = (epoch_sums.get('rec_s',0)+epoch_sums.get('rec_t',0)) / batch_count
             avg_metrics['epoch_avg/loss/cyc_total'] = (epoch_sums.get('cyc_z_s',0)+epoch_sums.get('cyc_z_t',0)) / batch_count
             avg_metrics['epoch_avg/loss/ot_total']  = (epoch_sums.get('ot_s',0)+epoch_sums.get('ot_t',0)) / batch_count
-            avg_metrics['epoch_avg/loss/geo_total'] = (epoch_sums.get('lap',0)+epoch_sums.get('triplet',0)) / batch_count
             avg_metrics['epoch_avg/loss/stab_vic']  = epoch_sums.get('vic',0) / batch_count
         except Exception:
             pass
@@ -582,7 +577,6 @@ def main():
     opt = torch.optim.Adam(translator.parameters(), lr=cfg.lr, fused=False, betas=(0.5, 0.999))
     
     if cfg.style != 'shared_ae':
-        ######################################################################################
         disc = Discriminator(
             latent_dim=translator.in_adapters[cfg.unsup_emb].in_dim,
             discriminator_dim=cfg.disc_dim,
@@ -593,7 +587,7 @@ def main():
 
         cfg.num_disc_params = sum(x.numel() for x in disc.parameters())
         print(f"Number of discriminator parameters:", cfg.num_disc_params)
-        ######################################################################################
+        
         sup_disc = Discriminator(
             latent_dim=translator.in_adapters[cfg.sup_emb].in_dim,
             discriminator_dim=cfg.disc_dim, 
@@ -604,7 +598,7 @@ def main():
         cfg.num_sup_disc_params = sum(x.numel() for x in sup_disc.parameters())
         print(f"Number of supervised discriminator parameters:", cfg.num_sup_disc_params)
         print(sup_disc)
-        ######################################################################################
+        
         latent_disc = Discriminator(
             latent_dim=cfg.d_adapter,
             discriminator_dim=cfg.disc_dim,
@@ -616,7 +610,6 @@ def main():
         print(f"Number of latent discriminator parameters:", cfg.num_latent_disc_params)
         print(latent_disc)
         latent_disc_opt = torch.optim.Adam(latent_disc.parameters(), lr=cfg.disc_lr, eps=cfg.eps, betas=(0.5, 0.999))
-        ######################################################################################
         similarity_disc = Discriminator(
             latent_dim=2 * cfg.bs,
             discriminator_dim=cfg.disc_dim,
@@ -628,8 +621,7 @@ def main():
         print(f"Number of similarity discriminator parameters:", cfg.num_similarity_disc_params)
         print(similarity_disc)
         similarity_disc_opt = torch.optim.Adam(similarity_disc.parameters(), lr=cfg.disc_lr, eps=cfg.eps, betas=(0.5, 0.999))
-        ######################################################################################
-
+       
     max_num_epochs = int(np.ceil(cfg.epochs))
     steps_per_epoch = len(supset) // cfg.bs
     total_steps = steps_per_epoch * cfg.epochs / cfg.gradient_accumulation_steps
