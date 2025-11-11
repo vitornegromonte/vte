@@ -80,7 +80,7 @@ heatmap_size = 64
 [logging]
 use_wandb = true
 wandb_project = 'depth_increase-SAE'
-wandb_name = 'shared_ae'
+wandb_name = 'shared_ae_testing'
 load_dir = './runs/'
 save_dir = './runs/{}/'
 force_dump = true
