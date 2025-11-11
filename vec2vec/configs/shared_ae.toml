@@ -79,7 +79,7 @@ heatmap_size = 64
 
 [logging]
 use_wandb = true
-wandb_project = 'sanity_check-SAE'
+wandb_project = 'depth_increase-SAE'
 wandb_name = 'shared_ae'
 load_dir = './runs/'
 save_dir = './runs/{}/'
