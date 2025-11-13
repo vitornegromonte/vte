@@ -274,20 +274,23 @@ def vicreg_loss(
 
 
 
-# Sinkhorn OT
-sinkhorn = SamplesLoss("sinkhorn", p=2, blur=0.05)
-
-def sinkhorn_divergence(
-    Ds,
-    Dt, 
-    Es, 
-    Et, 
-    x, 
-    y) -> torch.Tensor:
+# Sinkhorn OT - will be instantiated with specific blur (eps) value
+def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> torch.Tensor:
     """
-    Sinkhorn divergence between translated and target distributions.
+    Compute Sinkhorn divergence between two point clouds using geomloss.
+    
+    Args:
+        a: First point cloud (B, D)
+        b: Second point cloud (B, D)
+        eps: Blur/regularization parameter (corresponds to temperature in OT)
+    
+    Returns:
+        Sinkhorn divergence value
     """
-    return sinkhorn(Dt(Es(x)), y) + sinkhorn(Ds(Et(y)), x)
+    # Create SamplesLoss with the specified blur parameter
+    # debias=True gives us the actual Sinkhorn divergence (not just soft-assign)
+    sinkhorn = SamplesLoss("sinkhorn", p=2, blur=eps, debias=True, backend='online')
+    return sinkhorn(a, b)
 
 #  Example helpers 
 def compute_losses(
