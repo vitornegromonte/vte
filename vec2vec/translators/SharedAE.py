@@ -289,7 +289,8 @@ def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> t
     """
     # Create SamplesLoss with the specified blur parameter
     # debias=True gives us the actual Sinkhorn divergence (not just soft-assign)
-    sinkhorn = SamplesLoss("sinkhorn", p=2, blur=eps, debias=True, backend='online')
+    # backend='tensorized' is more reliable on Kaggle (doesn't need KeOps compilation)
+    sinkhorn = SamplesLoss("sinkhorn", p=2, blur=eps, debias=True, backend='tensorized')
     return sinkhorn(a, b)
 
 #  Example helpers 
