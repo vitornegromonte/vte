@@ -159,10 +159,22 @@ class SharedAETranslator(nn.Module):
         
         self.z_norm = nn.LayerNorm(d_z)
 
-    def encode_s(self, x): return self.z_norm(self.shared_proj(self.E_s(x)))
-    def encode_t(self, y): return self.z_norm(self.shared_proj(self.E_t(y)))
-    def decode_s(self, z): return self.D_s(z)
-    def decode_t(self, z): return self.D_t(z)
+    def encode_s(self, x): 
+        x = F.normalize(x, p=2, dim=-1)
+        return self.z_norm(self.shared_proj(self.E_s(x)))
+    
+    def encode_t(self, y):
+        y = F.normalize(y, p=2, dim=-1) 
+        return self.z_norm(self.shared_proj(self.E_t(y)))
+    
+    def decode_s(self, z): 
+        out = self.D_s(z)
+        return F.normalize(out, p=2, dim=-1)
+    
+    def decode_t(self, z): 
+        out = self.D_t(z)
+        return F.normalize(out, p=2, dim=-1)
+    
 
     def forward(self, x, y):
         z_s, z_t = self.encode_s(x), self.encode_t(y)
