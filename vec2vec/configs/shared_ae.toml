@@ -1,8 +1,8 @@
 [general]
 seed = 42
-sampling_seed = 123
-train_dataset_seed = 123
-val_dataset_seed = 123
+sampling_seed = 42
+train_dataset_seed = 42
+val_dataset_seed = 42
 normalize_embeddings = true
 mixed_precision = 'no'
 weight_init = 'orthogonal'
@@ -19,15 +19,15 @@ epochs = 10
 [translator]
 style = 'shared_ae'
 norm_style = 'layer'
-depth = 10
+depth = 6
 transform_depth = 10
 d_adapter = 768
-d_hidden = 512
+d_hidden = 768
 d_transform = 512 
 n_embs_per_batch = 1
 use_small_output_adapters = false
 use_residual_adapters = true
-d_z = 256
+d_z = 512
 
 [discriminator]
 gan_style = "vanilla"
@@ -37,7 +37,7 @@ use_residual = true
 
 [train]
 bs = 1024
-gradient_accumulation_steps = 1
+gradient_accumulation_steps = 2
 lr = 1e-3
 no_scheduler = false
 max_grad_norm = 1000.0
@@ -48,16 +48,16 @@ loss_coefficient_cc_trans = 10.0
 loss_coefficient_cc_rec = 10.0
 loss_coefficient_cc_vsp = 10.0
 loss_coefficient_r1_penalty = 0.0
-warmup_length = 2000
+warmup_length = 4000
 
 patience = 3
 min_delta = 0.0
 min_epochs = 10
 lambda_rec  = 1.0
-lambda_cyc  = 0.5
-lambda_dist = 0.1
-lambda_stab = 0.05
-lambda_geo  = 0.1
+lambda_cyc  = 0.0
+lambda_dist = 0.0
+lambda_stab = 0.1
+lambda_geo  = 0.0
 sinkhorn_eps = 0.1
 
 [gan]
@@ -79,7 +79,7 @@ heatmap_size = 64
 
 [logging]
 use_wandb = true
-wandb_project = 'projection-SAE'
+wandb_project = 'projection-SAE-rec_only'
 wandb_name = 'shared_ae_testing'
 load_dir = './runs/'
 save_dir = './runs/{}/'
