@@ -137,25 +137,30 @@ def l2_normalize(
 class SharedAETranslator(nn.Module):
     """
     Shared Autoencoder Translator for unsupervised embedding space translation.
+    Uses a shared projection layer after encoders to ensure both encoders 
+    project to the same latent space.
     """
 
     def __init__(
         self, 
         d_s, 
         d_t, 
-        d_z=512, 
-        hidden_dim=1024, 
-        depth=3):
+        d_z:int =512, 
+        hidden_dim: int=1024, 
+        depth: int=3):
         super().__init__()
         self.E_s = MLP(d_s, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, weight_init='orthogonal')
         self.D_s = MLP(d_z, d_s, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, weight_init='orthogonal')
         self.E_t = MLP(d_t, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, weight_init='orthogonal')
         self.D_t = MLP(d_z, d_t, hidden_dim=hidden_dim, depth=depth, residual=True, activation = nn.GELU, weight_init='orthogonal')
 
+        # Shared projection layer to guarantee same latent space
+        self.shared_proj = MLP(d_z, d_z, hidden_dim=d_z, depth=1, residual=False, activation=nn.GELU, weight_init='orthogonal')
+        
         self.z_norm = nn.LayerNorm(d_z)
 
-    def encode_s(self, x): return self.z_norm(self.E_s(x))
-    def encode_t(self, y): return self.z_norm(self.E_t(y))
+    def encode_s(self, x): return self.z_norm(self.shared_proj(self.E_s(x)))
+    def encode_t(self, y): return self.z_norm(self.shared_proj(self.E_t(y)))
     def decode_s(self, z): return self.D_s(z)
     def decode_t(self, z): return self.D_t(z)
 
@@ -194,8 +199,7 @@ def cyc_z_loss(
     """
     return F.mse_loss(z_cyc, z, reduction=reduction)
 
-#  VICReg (anti-collapse) 
-#  VICReg (anti-collapse) 
+#  VICReg (anti-collapse)
 def vicreg_loss(
     z1: torch.Tensor, 
     z2: torch.Tensor, 
@@ -274,7 +278,7 @@ def vicreg_loss(
 
 
 
-# Sinkhorn OT - will be instantiated with specific blur (eps) value
+# Sinkhorn OT
 def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> torch.Tensor:
     """
     Compute Sinkhorn divergence between two point clouds using geomloss.
@@ -287,9 +291,6 @@ def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> t
     Returns:
         Sinkhorn divergence value
     """
-    # Create SamplesLoss with the specified blur parameter
-    # debias=True gives us the actual Sinkhorn divergence (not just soft-assign)
-    # backend='tensorized' is more reliable on Kaggle (doesn't need KeOps compilation)
     sinkhorn = SamplesLoss("sinkhorn", p=2, blur=eps, debias=True, backend='tensorized')
     return sinkhorn(a, b)
 
