@@ -197,9 +197,25 @@ def loss_rec(
     x_rec: torch.Tensor, 
     reduction: str = "mean") -> torch.Tensor:
     """ 
-    Reconstruction loss between input x and reconstructed x_rec.
+    Cosine reconstruction loss (better for normalized embeddings).
+    
+    For unit vectors: MSE = 2(1 - cos_sim) 
+    Cosine loss = 1 - cos_sim is more stable.
     """
-    return F.mse_loss(x_rec, x, reduction=reduction)
+    # Ensure both are normalized (defensive, should already be)
+    x_norm = F.normalize(x, p=2, dim=-1)
+    x_rec_norm = F.normalize(x_rec, p=2, dim=-1)
+    
+    # Cosine similarity in [-1, 1]
+    cos_sim = F.cosine_similarity(x_norm, x_rec_norm, dim=-1)
+    
+    # Loss in [0, 2], with 0 = perfect, 2 = opposite direction
+    if reduction == "mean":
+        return (1 - cos_sim).mean()
+    elif reduction == "sum":
+        return (1 - cos_sim).sum()
+    else:
+        return 1 - cos_sim
 
 # Cycle-in-Z
 def cyc_z_loss(

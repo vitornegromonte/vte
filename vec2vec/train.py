@@ -266,26 +266,6 @@ def training_loop_shared_ae(
             break
 
         with accelerator.accumulate(translator), accelerator.autocast():
-            if i == 0 and accelerator.is_main_process:
-                with torch.no_grad():
-                    sup_ins_raw = process_batch(sup_batch, sup_encs, normalize_embeddings=False, device=device)
-                    unsup_ins_raw = process_batch(unsup_batch, unsup_enc, normalize_embeddings=False, device=device)
-                    
-                    x_raw = sup_ins_raw[cfg.sup_emb]
-                    y_raw = unsup_ins_raw[cfg.unsup_emb]
-                    
-                    x_norm_avg = x_raw.norm(dim=-1).mean().item()
-                    y_norm_avg = y_raw.norm(dim=-1).mean().item()
-                    x_norm_std = x_raw.norm(dim=-1).std().item()
-                    y_norm_std = y_raw.norm(dim=-1).std().item()
-                    
-                    print(f"\n{'='*60}")
-                    print(f"[Embedding Norm Diagnostic - Batch {i}]")
-                    print(f"{'='*60}")
-                    print(f"{cfg.sup_emb.upper()} (source) norms: {x_norm_avg:.3f} ± {x_norm_std:.3f}")
-                    print(f"{cfg.unsup_emb.upper()} (target) norms: {y_norm_avg:.3f} ± {y_norm_std:.3f}")
-                    print(f"Ratio ({cfg.sup_emb}/{cfg.unsup_emb}): {x_norm_avg/y_norm_avg:.3f}")
-                    print(f"{'='*60}\n")
                     
             sup_ins = process_batch(sup_batch, sup_encs, cfg.normalize_embeddings, device)
             unsup_ins = process_batch(unsup_batch, unsup_enc, cfg.normalize_embeddings, device)
