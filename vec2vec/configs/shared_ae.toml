@@ -8,8 +8,8 @@ mixed_precision = 'no'
 weight_init = 'orthogonal'
 dataset = 'nq'
 max_seq_length = 64
-unsup_emb = 'gtr'
-sup_emb = 'gte'
+unsup_emb = 'gte'
+sup_emb = 'gtr'
 n_embs_per_batch = 1
 finetune_mode = false
 noise_level = 0.0
@@ -19,7 +19,7 @@ epochs = 10
 [translator]
 style = 'shared_ae'
 norm_style = 'layer'
-depth = 6
+depth = 10
 transform_depth = 10
 d_adapter = 768
 d_hidden = 768
@@ -79,7 +79,7 @@ heatmap_size = 64
 
 [logging]
 use_wandb = true
-wandb_project = 'projection-SAE-rec_only'
+wandb_project = 'projection-SAE-rec_only+cos_rec'
 wandb_name = 'shared_ae_testing'
 load_dir = './runs/'
 save_dir = './runs/{}/'
