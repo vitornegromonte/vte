@@ -285,6 +285,7 @@ def training_loop_shared_ae(
                 lambda_cyc=lambda_cyc,
                 lambda_dist=lambda_dist,
                 lambda_stab=lambda_stab,
+                lambda_geo=lambda_geo,
                 use_ot=use_ot,
                 ot_eps=ot_eps,
             )
@@ -303,7 +304,7 @@ def training_loop_shared_ae(
 
             # Include weighted components (effective contribution) for interpretability.
             metrics["loss_w/rec"] = lambda_rec * (losses['rec_s'].item() + losses['rec_t'].item())
-            metrics["loss_w/cyc"] = lambda_cyc * (losses['cyc_z_s'].item() + losses['cyc_z_t'].item())
+            metrics["loss_w/cyc"] = lambda_cyc * (losses['cyc_s'].item() + losses['cyc_t'].item())
             metrics["loss_w/dist"] = lambda_dist * (losses['ot_s'].item() + losses['ot_t'].item())
             metrics["loss_w/stab"] = lambda_stab * losses['vic'].item()
 
@@ -343,7 +344,7 @@ def training_loop_shared_ae(
         # Grouped averages
         try:
             avg_metrics['epoch_avg/loss/rec_total'] = (epoch_sums.get('rec_s',0)+epoch_sums.get('rec_t',0)) / batch_count
-            avg_metrics['epoch_avg/loss/cyc_total'] = (epoch_sums.get('cyc_z_s',0)+epoch_sums.get('cyc_z_t',0)) / batch_count
+            avg_metrics['epoch_avg/loss/cyc_total'] = (epoch_sums.get('cyc_s',0)+epoch_sums.get('cyc_t',0)) / batch_count
             avg_metrics['epoch_avg/loss/ot_total']  = (epoch_sums.get('ot_s',0)+epoch_sums.get('ot_t',0)) / batch_count
             avg_metrics['epoch_avg/loss/stab_vic']  = epoch_sums.get('vic',0) / batch_count
         except Exception:

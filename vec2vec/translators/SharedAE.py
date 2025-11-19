@@ -180,13 +180,21 @@ class SharedAETranslator(nn.Module):
         z_s, z_t = self.encode_s(x), self.encode_t(y)
         x_rec, y_rec = self.decode_s(z_s), self.decode_t(z_t)
         y_hat, x_hat = self.decode_t(z_s), self.decode_s(z_t)
-        z_s_cyc, z_t_cyc = self.encode_t(y_hat), self.encode_s(x_hat)
+        
+        # Cycle consistency: x -> z_s -> y_hat -> z_t_cyc -> x_cyc
+        z_t_cyc = self.encode_t(y_hat)
+        x_cyc = self.decode_s(z_t_cyc)
+        
+        # Cycle consistency: y -> z_t -> x_hat -> z_s_cyc -> y_cyc
+        z_s_cyc = self.encode_s(x_hat)
+        y_cyc = self.decode_t(z_s_cyc)
 
         return {
             "z_s": z_s, "z_t": z_t,
             "x_rec": x_rec, "y_rec": y_rec,
             "y_hat": y_hat, "x_hat": x_hat,
             "z_s_cyc": z_s_cyc, "z_t_cyc": z_t_cyc,
+            "x_cyc": x_cyc, "y_cyc": y_cyc,
         }
         
 #############  Losses 
@@ -217,22 +225,31 @@ def loss_rec(
     else:
         return 1 - cos_sim
 
-# Cycle-in-Z
-def cyc_z_loss(
-    z: torch.Tensor, 
-    z_cyc: torch.Tensor, 
-    reduction: str = "mean") -> torch.Tensor:
+# Cycle Consistency in representation level
+def cycle_consistency_loss(
+    original: torch.Tensor, 
+    cycled: torch.Tensor, 
+    reduction: str = "mean"
+) -> torch.Tensor:
     """
-    Cycle-consistency loss in latent space between z and z_cyc.
+    Computes cycle-consistency loss in the INPUT space (A or B).
+    
+    Math: 
+    L_cyc = ||x - D_s(E_t(D_t(E_s(x))))||^2
+    
+    Args:
+        original: The source input vector x (or y).
+        cycled: The vector resulting from the full cycle x -> z_s -> y_hat -> z_t -> x_hat.
+        reduction: Specifies the reduction to apply to the output ('mean' or 'sum').
     """
-    return F.mse_loss(z_cyc, z, reduction=reduction)
+    return F.mse_loss(cycled, original, reduction=reduction)
 
 #  VICReg (anti-collapse)
 def vicreg_loss(
     z1: torch.Tensor, 
     z2: torch.Tensor, 
     *, 
-    sim_coeff: float = 1.0, 
+    sim_coeff: float = 0.0, 
     var_coeff: float = 1.0, 
     cov_coeff: float = 0.1, 
     eps: float = 1e-3) -> torch.Tensor:    
@@ -305,7 +322,6 @@ def vicreg_loss(
     return sim_coeff * sim_loss + var_coeff * var_loss_val + cov_coeff * cov_loss
 
 
-
 # Sinkhorn OT
 def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> torch.Tensor:
     """
@@ -319,8 +335,14 @@ def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> t
     Returns:
         Sinkhorn divergence value
     """
+    
+    # Forcing normalized representations to match euclidean distance with cosine similarity:
+    # ||x-y||^2 = 2(1-cos(x,y))    
+    a_norm = F.normalize(a, p=2, dim=-1)
+    b_norm = F.normalize(b, p=2, dim=-1)
+    
     sinkhorn = SamplesLoss("sinkhorn", p=2, blur=eps, debias=True, backend='tensorized')
-    return sinkhorn(a, b)
+    return sinkhorn(a_norm, b_norm)
 
 #  Example helpers 
 def compute_losses(
@@ -337,42 +359,48 @@ def compute_losses(
     ot_eps=0.1,
 ) -> Tuple[torch.Tensor, dict]:
 
-    """
-    Aggregate default losses returning (total, details dict).
-    This is a convenience for trainers; trainers may compute more specialized
-    variants or use different reductions.
-    """
-    z_s = out['z_s']
-    z_t = out['z_t']
-    x_rec = out['x_rec']
-    y_rec = out['y_rec']
-    y_hat = out['y_hat']
-    x_hat = out['x_hat']
-    z_s_cyc = out['z_s_cyc']
-    z_t_cyc = out['z_t_cyc']
-
+    # Unpack
+    z_s, z_t = out['z_s'], out['z_t']
+    y_hat, x_hat = out['y_hat'], out['x_hat'] # Intermediate translations
+    
     losses = {}
-    losses['rec_s'] = loss_rec(x, x_rec)
-    losses['rec_t'] = loss_rec(y, y_rec)
-    losses['cyc_z_s'] = cyc_z_loss(z_s, z_s_cyc)
-    losses['cyc_z_t'] = cyc_z_loss(z_t, z_t_cyc)
 
+    # 1. Reconstruction (Standard)
+    losses['rec_s'] = loss_rec(x, out['x_rec'])
+    losses['rec_t'] = loss_rec(y, out['y_rec'])
+
+    # 2. Cycle Consistency (Input Space - Correct)
+    losses['cyc_s'] = cycle_consistency_loss(x, out['x_cyc'])
+    losses['cyc_t'] = cycle_consistency_loss(y, out['y_cyc'])
+
+    # 3. Distribution Matching (Sinkhorn)
+    # RECOMMENDATION: Align Latents (z), not Outputs (y_hat).
+    # Aligning outputs forces gradients through the Decoder, which is unstable early on.
+    # Aligning Z forces the Encoders to produce the "Interlingua".
     if use_ot:
-        losses['ot_t'] = sinkhorn_divergence(y_hat, y, eps=ot_eps)
-        losses['ot_s'] = sinkhorn_divergence(x_hat, x, eps=ot_eps)
+        losses['ot'] = sinkhorn_divergence(z_s, z_t, eps=ot_eps)
+        # Optional: Bidirectional (z_t -> z_s) is usually symmetric, 
+        # so one call is often enough, but you can sum them if you prefer.
     else:
-        losses['ot_t'] = torch.tensor(0.0, device=x.device)
-        losses['ot_s'] = torch.tensor(0.0, device=x.device)
+        losses['ot'] = torch.tensor(0.0, device=x.device)
 
-    losses['vic'] = vicreg_loss(z_s, z_t)
-    # geometry local
-    #losses['lap'] = knn_laplacian_loss(z_s, l2_normalize(y_hat, dim=-1))
-    #losses['triplet'] = triplet_loss_source_neighbors(z_s, l2_normalize(y_hat, dim=-1))
+    # 4. Stability (VICReg)
+    # Default is 1.0, which forces random x[i] to match random y[i].
+    losses['vic'] = vicreg_loss(
+        z_s, z_t, 
+        sim_coeff=0.0,   # <--- Disables "Invariance" (matching pairs)
+        var_coeff=10.0,  # <--- Prevents collapse (keeps clouds expanded)
+        cov_coeff=1.0    # <--- Decorrelates features
+    )
+
+    # 5. Geometry (Optional)
+    # If you enable this, apply it to Z, not Y_hat.
+    # losses['lap'] = knn_laplacian_loss(z_s) 
 
     total = (
         lambda_rec * (losses['rec_s'] + losses['rec_t'])
-        + lambda_cyc * (losses['cyc_z_s'] + losses['cyc_z_t'])
-        + lambda_dist * (losses['ot_s'] + losses['ot_t'])
+        + lambda_cyc * (losses['cyc_s'] + losses['cyc_t'])
+        + lambda_dist * losses['ot'] 
         + lambda_stab * losses['vic']
     )
 
