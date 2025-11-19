@@ -305,7 +305,10 @@ def training_loop_shared_ae(
             # Include weighted components (effective contribution) for interpretability.
             metrics["loss_w/rec"] = lambda_rec * (losses['rec_s'].item() + losses['rec_t'].item())
             metrics["loss_w/cyc"] = lambda_cyc * (losses['cyc_s'].item() + losses['cyc_t'].item())
-            metrics["loss_w/dist"] = lambda_dist * (losses['ot_s'].item() + losses['ot_t'].item())
+            if 'ot' in losses:
+                metrics["loss_w/dist"] = lambda_dist * losses['ot'].item()
+            else:
+                metrics["loss_w/dist"] = lambda_dist * (losses['ot_s'].item() + losses['ot_t'].item())
             metrics["loss_w/stab"] = lambda_stab * losses['vic'].item()
 
             # Log coefficients once per call of this training loop (i == 0)
@@ -345,7 +348,10 @@ def training_loop_shared_ae(
         try:
             avg_metrics['epoch_avg/loss/rec_total'] = (epoch_sums.get('rec_s',0)+epoch_sums.get('rec_t',0)) / batch_count
             avg_metrics['epoch_avg/loss/cyc_total'] = (epoch_sums.get('cyc_s',0)+epoch_sums.get('cyc_t',0)) / batch_count
-            avg_metrics['epoch_avg/loss/ot_total']  = (epoch_sums.get('ot_s',0)+epoch_sums.get('ot_t',0)) / batch_count
+            if 'ot' in epoch_sums:
+                avg_metrics['epoch_avg/loss/ot_total'] = epoch_sums.get('ot',0) / batch_count
+            else:
+                avg_metrics['epoch_avg/loss/ot_total']  = (epoch_sums.get('ot_s',0)+epoch_sums.get('ot_t',0)) / batch_count
             avg_metrics['epoch_avg/loss/stab_vic']  = epoch_sums.get('vic',0) / batch_count
         except Exception:
             pass
