@@ -321,6 +321,28 @@ def vicreg_loss(
 
     return sim_coeff * sim_loss + var_coeff * var_loss_val + cov_coeff * cov_loss
 
+def knn_laplacian_loss(z: torch.Tensor, k: int = 10) -> torch.Tensor:
+    """
+    Preserves local geometry. If points are close in the batch, 
+    their latent representations should be close.
+    """
+    B = z.shape[0]
+    if B < k: return torch.tensor(0.0, device=z.device)
+    
+    # 1. Compute pairwise Euclidean distances in the batch
+    # z is (B, D)
+    dist_matrix = torch.cdist(z, z, p=2)
+    
+    # 2. Find k-nearest neighbors for each point (excluding itself)
+    # values: (B, k), indices: (B, k)
+    topk_vals, topk_idxs = torch.topk(dist_matrix, k=k+1, largest=False, dim=1)
+    
+    # 3. Force point i to be close to its neighbors (Laplacian smoothness)
+    # We want to minimize the distance to the neighbors.
+    # We take the sum of distances to the k neighbors.
+    neighbor_dists = topk_vals[:, 1:] # Exclude self (index 0, dist 0)
+    
+    return neighbor_dists.mean()
 
 # Sinkhorn OT
 def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> torch.Tensor:
@@ -395,13 +417,13 @@ def compute_losses(
 
     # 5. Geometry (Optional)
     # If you enable this, apply it to Z, not Y_hat.
-    # losses['lap'] = knn_laplacian_loss(z_s) 
+    losses['lap'] = knn_laplacian_loss(z_s) 
 
     total = (
         lambda_rec * (losses['rec_s'] + losses['rec_t'])
         + lambda_cyc * (losses['cyc_s'] + losses['cyc_t'])
         + lambda_dist * losses['ot'] 
-        + lambda_stab * losses['vic']
+        + lambda_stab * losses['vic'] + lambda_geo * losses['lap']
     )
 
     losses['total'] = total
