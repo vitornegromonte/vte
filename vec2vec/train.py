@@ -325,6 +325,14 @@ def training_loop_shared_ae(
                     logger.logkv(k, v)
                 logged_coeffs_once = True
 
+            # Diagnostic print
+            if accelerator.is_main_process:
+                with torch.no_grad():
+                    z_std = out['z_s'].std(dim=0).mean()
+                    z_norm = out['z_s'].norm(dim=1).mean()
+                    if i % 50 == 0: # Print every 50 steps
+                        print(f"[DEBUG] z_norm={z_norm:.4f} | z_std={z_std:.4f}")
+
             # Update epoch accumulators (raw component losses only)
             for lk, lv in losses.items():
                 epoch_sums[lk] = epoch_sums.get(lk, 0.0) + (lv.item() if hasattr(lv, 'item') else float(lv))
