@@ -53,11 +53,11 @@ warmup_length = 4000
 patience = 3
 min_delta = 0.0
 min_epochs = 10
-lambda_rec  = 1.0
+lambda_rec  = 0.5
 lambda_cyc  = 1.0
-lambda_dist = 1.0
-lambda_stab = 0.1
-lambda_geo  = 0.0
+lambda_dist = 5.0
+lambda_stab = 0.01
+lambda_geo  = 0.1
 sinkhorn_eps = 0.1
 
 [gan]
