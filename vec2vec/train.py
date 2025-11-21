@@ -246,13 +246,14 @@ def training_loop_shared_ae(
     lambda_cyc  = getattr(cfg, 'lambda_cyc', 1.0)
     lambda_dist = getattr(cfg, 'lambda_dist', 0.2)
     lambda_stab = getattr(cfg, 'lambda_stab', 0.1)
-    lambda_geo  = getattr(cfg, 'lambda_geo', 0.05)
+    lambda_geo  = getattr(cfg, 'lambda_geo', 0.0)
+    lambda_contrastive = getattr(cfg, 'lambda_contrastive', 0.0)
     sinkhorn_eps = getattr(cfg, 'sinkhorn_eps', 0.1)
 
     if accelerator.is_main_process:
         print(
             f"[SharedAE Coeffs] rec={lambda_rec} | cyc={lambda_cyc} | dist={lambda_dist} | "
-            f"stab={lambda_stab} | geo={lambda_geo} | sinkhorn_eps={sinkhorn_eps}"
+            f"stab={lambda_stab} | geo={lambda_geo} | contrastive={lambda_contrastive} | sinkhorn_eps={sinkhorn_eps}"
         )
         
     logged_coeffs_once = False
@@ -286,6 +287,7 @@ def training_loop_shared_ae(
                 lambda_dist=lambda_dist,
                 lambda_stab=lambda_stab,
                 lambda_geo=lambda_geo,
+                lambda_contrastive=lambda_contrastive,
                 use_ot=use_ot,
                 ot_eps=ot_eps,
             )
@@ -319,6 +321,7 @@ def training_loop_shared_ae(
                     "coef/lambda_dist": lambda_dist,
                     "coef/lambda_stab": lambda_stab,
                     "coef/lambda_geo": lambda_geo,
+                    "coef/lambda_contrastive": lambda_contrastive,
                     "coef/sinkhorn_eps": sinkhorn_eps,
                 }
                 for k, v in coeff_metrics.items():

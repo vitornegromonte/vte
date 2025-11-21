@@ -321,29 +321,6 @@ def vicreg_loss(
 
     return sim_coeff * sim_loss + var_coeff * var_loss_val + cov_coeff * cov_loss
 
-def knn_laplacian_loss(z: torch.Tensor, k: int = 10) -> torch.Tensor:
-    """
-    Preserves local geometry. If points are close in the batch, 
-    their latent representations should be close.
-    """
-    B = z.shape[0]
-    if B < k: return torch.tensor(0.0, device=z.device)
-    
-    # 1. Compute pairwise Euclidean distances in the batch
-    # z is (B, D)
-    dist_matrix = torch.cdist(z, z, p=2)
-    
-    # 2. Find k-nearest neighbors for each point (excluding itself)
-    # values: (B, k), indices: (B, k)
-    topk_vals, topk_idxs = torch.topk(dist_matrix, k=k+1, largest=False, dim=1)
-    
-    # 3. Force point i to be close to its neighbors (Laplacian smoothness)
-    # We want to minimize the distance to the neighbors.
-    # We take the sum of distances to the k neighbors.
-    neighbor_dists = topk_vals[:, 1:] # Exclude self (index 0, dist 0)
-    
-    return neighbor_dists.mean()
-
 # Sinkhorn OT
 def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> torch.Tensor:
     """
@@ -366,6 +343,58 @@ def sinkhorn_divergence(a: torch.Tensor, b: torch.Tensor, eps: float = 0.1) -> t
     sinkhorn = SamplesLoss("sinkhorn", p=2, blur=eps, debias=True, backend='tensorized')
     return sinkhorn(a_norm, b_norm)
 
+def get_mnn_anchors(z_s, z_t, top_k=1):
+    """
+    Identifies Mutual Nearest Neighbors (Geometric Anchors).
+    Returns indices (idx_s, idx_t) of pairs that are mutually closest.
+    """
+    # Normalize for Cosine Similarity
+    z_s_norm = F.normalize(z_s, p=2, dim=1)
+    z_t_norm = F.normalize(z_t, p=2, dim=1)
+
+    # Similarity Matrix
+    sim = torch.mm(z_s_norm, z_t_norm.t()) # (B, B)
+
+    # Find Best Matches
+    # best_t_for_s[i] = index of target that is closest to source i
+    _, best_t_for_s = sim.topk(top_k, dim=1) 
+    # best_s_for_t[j] = index of source that is closest to target j
+    _, best_s_for_t = sim.topk(top_k, dim=0)
+
+    # Find Mutual Agreement
+    matches_s = []
+    matches_t = []
+    
+    # Check every source item
+    for i in range(z_s.shape[0]):
+        target_candidate = best_t_for_s[i, 0] # top 1 match
+        # Does that target also think 'i' is its best match?
+        if best_s_for_t[0, target_candidate] == i:
+            matches_s.append(i)
+            matches_t.append(target_candidate)
+            
+    if not matches_s:
+        return None, None
+        
+    return torch.tensor(matches_s, device=z_s.device), torch.tensor(matches_t, device=z_s.device)
+
+def cross_domain_contrastive_loss(z_s, z_t, temp=0.1):
+    """
+    InfoNCE Loss.
+    z_s and z_t must be ALIGNED (z_s[k] should match z_t[k]).
+    """
+    # Normalize
+    z_s = F.normalize(z_s, p=2, dim=1)
+    z_t = F.normalize(z_t, p=2, dim=1)
+    
+    # Similarity logits
+    logits = torch.mm(z_s, z_t.t()) / temp
+    labels = torch.arange(z_s.shape[0], device=z_s.device)
+    
+    # Cross Entropy forces diagonal to be high, off-diagonal to be low
+    loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.t(), labels)) / 2
+    return loss
+
 #  Example helpers 
 def compute_losses(
     out: dict,
@@ -377,6 +406,7 @@ def compute_losses(
     lambda_dist=0.5,
     lambda_stab=0.1,
     lambda_geo=0.2,
+    lambda_contrastive=0.0,
     use_ot=True,
     ot_eps=0.1,
 ) -> Tuple[torch.Tensor, dict]:
@@ -387,18 +417,20 @@ def compute_losses(
     
     losses = {}
 
-    # 1. Reconstruction (Standard)
+    # Reconstruction
     losses['rec_s'] = loss_rec(x, out['x_rec'])
     losses['rec_t'] = loss_rec(y, out['y_rec'])
 
-    # 2. Cycle Consistency (Input Space - Correct)
+    # Cycle Consistency (Input Space - Correct)
     losses['cyc_s'] = cycle_consistency_loss(x, out['x_cyc'])
     losses['cyc_t'] = cycle_consistency_loss(y, out['y_cyc'])
 
-    # 3. Distribution Matching (Sinkhorn)
-    # RECOMMENDATION: Align Latents (z), not Outputs (y_hat).
-    # Aligning outputs forces gradients through the Decoder, which is unstable early on.
-    # Aligning Z forces the Encoders to produce the "Interlingua".
+    # Distribution Matching (Sinkhorn)
+    """
+    Align Latents (z), not Outputs (y_hat):
+    - Aligning outputs forces gradients through the Decoder, which is unstable early on.
+    - Aligning Z forces the Encoders to produce the "Interlingua".
+    """
     if use_ot:
         losses['ot'] = sinkhorn_divergence(z_s, z_t, eps=ot_eps)
         # Optional: Bidirectional (z_t -> z_s) is usually symmetric, 
@@ -406,24 +438,39 @@ def compute_losses(
     else:
         losses['ot'] = torch.tensor(0.0, device=x.device)
 
-    # 4. Stability (VICReg)
-    # Default is 1.0, which forces random x[i] to match random y[i].
+    # Stability (VICReg)
     losses['vic'] = vicreg_loss(
         z_s, z_t, 
-        sim_coeff=0.0,   # <--- Disables "Invariance" (matching pairs)
-        var_coeff=10.0,  # <--- Prevents collapse (keeps clouds expanded)
-        cov_coeff=1.0    # <--- Decorrelates features
+        sim_coeff=0.0,   # Disables "Invariance" (since we don't have matching pairs)
+        var_coeff=10.0, 
+        cov_coeff=1.0
     )
 
-    # 5. Geometry (Optional)
-    # If you enable this, apply it to Z, not Y_hat.
-    losses['lap'] = knn_laplacian_loss(z_s) 
+
+    # Contrastive Loss on Mutual Nearest Neighbors (Geometric Anchors)
+    
+    # Find anchors (detached to prevent backprop through selection)
+    with torch.no_grad():
+        idx_s, idx_t = get_mnn_anchors(z_s.detach(), z_t.detach())
+
+    # Apply contrastive loss only if we have sufficient pairs
+    if idx_s is not None and len(idx_s) > 2:  # Need at least 2 pairs
+        # Gather the confident pairs
+        anchor_z_s = z_s[idx_s]
+        anchor_z_t = z_t[idx_t]
+        
+        # "Pull these together, Push others away"
+        losses['contrastive'] = cross_domain_contrastive_loss(anchor_z_s, anchor_z_t, temp=0.1)
+    else:
+        losses['contrastive'] = torch.tensor(0.0, device=x.device)
 
     total = (
         lambda_rec * (losses['rec_s'] + losses['rec_t'])
         + lambda_cyc * (losses['cyc_s'] + losses['cyc_t'])
         + lambda_dist * losses['ot'] 
-        + lambda_stab * losses['vic'] + lambda_geo * losses['lap']
+        + lambda_stab * losses['vic']
+        + lambda_geo * losses['lap']
+        + lambda_contrastive * losses['contrastive']
     )
 
     losses['total'] = total
