@@ -378,6 +378,35 @@ def get_mnn_anchors(z_s, z_t, top_k=1):
         
     return torch.tensor(matches_s, device=z_s.device), torch.tensor(matches_t, device=z_s.device)
 
+def compute_procrustes_alignment(z_s, z_t):
+    """
+    Aligns z_s to z_t using SVD (Unsupervised).
+    Matches the Principal Components of the two batches.
+    """
+    # Center the data
+    mu_s = z_s.mean(0, keepdim=True)
+    mu_t = z_t.mean(0, keepdim=True)
+    z_s_cent = z_s - mu_s
+    z_t_cent = z_t - mu_t
+
+    # Compute Cov Matrices
+    C_s = z_s.T @ z_s
+    C_t = z_t.T @ z_t
+    
+    # SVD of the cross-covariance
+    # Ideally we want Rotation R such that ||z_s R - z_t|| is minimized.
+    # In unsupervised settings, we align the AXES (Principal Components).
+    
+    # Simple PCA Alignment:
+    U_s, _, V_s = torch.svd(z_s_cent.t())
+    U_t, _, V_t = torch.svd(z_t_cent.t())
+    
+    # Rotation matrix that aligns the PCA axes of S to T
+    # R = U_s @ U_t.T
+    R = torch.mm(U_s, U_t.t())
+    
+    return R
+
 def cross_domain_contrastive_loss(z_s, z_t, temp=0.1):
     """
     InfoNCE Loss.
@@ -409,6 +438,7 @@ def compute_losses(
     lambda_contrastive=0.0,
     use_ot=True,
     ot_eps=0.1,
+    current_epoch=0,
 ) -> Tuple[torch.Tensor, dict]:
 
     # Unpack
@@ -416,6 +446,22 @@ def compute_losses(
     y_hat, x_hat = out['y_hat'], out['x_hat'] # Intermediate translations
     
     losses = {}
+
+    # 0. SVD Warmup (Only active for first few epochs)
+    # This forces the source cloud to rotate roughly onto the target cloud
+    # based on global geometry (SVD), not local matching.
+    if current_epoch < 2:
+        with torch.no_grad():
+            R = compute_procrustes_alignment(z_s, z_t)
+        
+        # Rotate Source to match Target's axes
+        z_s_rotated = torch.mm(z_s, R)
+        
+        # MSE Loss between Rotated Source and Target
+        # "Force the principal components to align"
+        losses['svd'] = F.mse_loss(z_s_rotated, z_t)
+    else:
+        losses['svd'] = torch.tensor(0.0, device=x.device)
 
     # Reconstruction
     losses['rec_s'] = loss_rec(x, out['x_rec'])
@@ -470,6 +516,7 @@ def compute_losses(
         + lambda_dist * losses['ot'] 
         + lambda_stab * losses['vic']
         + lambda_contrastive * losses['contrastive']
+        + 100.0 * losses['svd']  # Massive weight to snap clouds together during warmup
     )
 
     losses['total'] = total

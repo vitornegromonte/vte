@@ -231,6 +231,7 @@ def training_loop_shared_ae(
     scheduler,
     logger=None,
     max_num_batches=None,
+    current_epoch=0,
 ):
     device = accelerator.device
     if logger is None:
@@ -290,6 +291,7 @@ def training_loop_shared_ae(
                 lambda_contrastive=lambda_contrastive,
                 use_ot=use_ot,
                 ot_eps=ot_eps,
+                current_epoch=current_epoch,
             )
 
             exit_on_nan(total)
@@ -790,6 +792,7 @@ def main():
                 scheduler=scheduler,
                 logger=logger,
                 max_num_batches=max_num_batches,
+                current_epoch=epoch,
             )
         else:
             sup_iter = training_loop_(
