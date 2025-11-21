@@ -469,7 +469,6 @@ def compute_losses(
         + lambda_cyc * (losses['cyc_s'] + losses['cyc_t'])
         + lambda_dist * losses['ot'] 
         + lambda_stab * losses['vic']
-        + lambda_geo * losses['lap']
         + lambda_contrastive * losses['contrastive']
     )
 
