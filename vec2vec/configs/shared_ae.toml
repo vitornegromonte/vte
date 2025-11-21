@@ -8,8 +8,8 @@ mixed_precision = 'no'
 weight_init = 'orthogonal'
 dataset = 'nq'
 max_seq_length = 64
-unsup_emb = 'gte'
-sup_emb = 'gtr'
+unsup_emb = 'ProsusAI/finbert'
+sup_emb = 'google-bert/bert-base-uncased'
 n_embs_per_batch = 1
 finetune_mode = false
 noise_level = 0.0
@@ -59,8 +59,8 @@ lambda_cyc  = 1.0
 lambda_dist = 5.0
 lambda_stab = 1.0
 lambda_geo  = 0.0
-lambda_contrastive = 1.0
-sinkhorn_eps = 0.1
+lambda_contrastive = 0.0
+sinkhorn_eps = 0.05
 
 [gan]
 disc_lr = 2e-5

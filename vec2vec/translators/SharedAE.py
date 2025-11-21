@@ -447,22 +447,6 @@ def compute_losses(
     
     losses = {}
 
-    # 0. SVD Warmup (Only active for first few epochs)
-    # This forces the source cloud to rotate roughly onto the target cloud
-    # based on global geometry (SVD), not local matching.
-    if current_epoch < 2:
-        with torch.no_grad():
-            R = compute_procrustes_alignment(z_s, z_t)
-        
-        # Rotate Source to match Target's axes
-        z_s_rotated = torch.mm(z_s, R)
-        
-        # MSE Loss between Rotated Source and Target
-        # "Force the principal components to align"
-        losses['svd'] = F.mse_loss(z_s_rotated, z_t)
-    else:
-        losses['svd'] = torch.tensor(0.0, device=x.device)
-
     # Reconstruction
     losses['rec_s'] = loss_rec(x, out['x_rec'])
     losses['rec_t'] = loss_rec(y, out['y_rec'])
@@ -494,7 +478,6 @@ def compute_losses(
 
 
     # Contrastive Loss on Mutual Nearest Neighbors (Geometric Anchors)
-    
     # Find anchors (detached to prevent backprop through selection)
     with torch.no_grad():
         idx_s, idx_t = get_mnn_anchors(z_s.detach(), z_t.detach())
@@ -516,7 +499,6 @@ def compute_losses(
         + lambda_dist * losses['ot'] 
         + lambda_stab * losses['vic']
         + lambda_contrastive * losses['contrastive']
-        + 100.0 * losses['svd']  # Massive weight to snap clouds together during warmup
     )
 
     losses['total'] = total
