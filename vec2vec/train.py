@@ -218,6 +218,11 @@ def training_loop_(
     return sup_iter
 
 
+import torch
+import os
+from tqdm import tqdm
+import toml
+
 def training_loop_shared_ae(
     save_dir,
     accelerator,
@@ -237,30 +242,37 @@ def training_loop_shared_ae(
     if logger is None:
         logger = Logger(dummy=True)
 
-    dataloader_pbar = tqdm(zip(sup_dataloader, unsup_dataloader), total=min(len(sup_dataloader), len(unsup_dataloader)), desc="Training (shared_ae)")
+    # Use zip to iterate both dataloaders
+    dataloader_pbar = tqdm(
+        zip(sup_dataloader, unsup_dataloader), 
+        total=min(len(sup_dataloader), len(unsup_dataloader)), 
+        desc=f"Training (shared_ae) Ep {current_epoch}"
+    )
     model_save_dir = os.path.join(save_dir, 'model.pt')
 
     translator.train()
     
-    # Gather coefficient hyperparameters (with safe defaults) for logging.
-    lambda_rec  = getattr(cfg, 'lambda_rec', 1.0)
-    lambda_cyc  = getattr(cfg, 'lambda_cyc', 1.0)
-    lambda_dist = getattr(cfg, 'lambda_dist', 0.2)
-    lambda_stab = getattr(cfg, 'lambda_stab', 0.1)
-    lambda_geo  = getattr(cfg, 'lambda_geo', 0.0)
-    lambda_skew = getattr(cfg, 'lambda_skew', 0.1)
-    lambda_mnn  = getattr(cfg, 'lambda_mnn', 0.0)
-    lambda_contrastive = getattr(cfg, 'lambda_contrastive', 0.0)
-    sinkhorn_eps = getattr(cfg, 'sinkhorn_eps', 0.1)
+    # --- 1. CONFIGURATION ---
+    # Gather hyperparameters. 
+    # lambda_stab: Controls VICReg (Variance) -> Prevents Collapse
+    # lambda_skew: Controls Kurtosis -> Breaks Symmetry (Aristotle Fix)
+    # lambda_contrastive: Controls MNN Anchors -> Fixes Ranking (Delayed)
+    lambda_rec          = getattr(cfg, 'lambda_rec', 1.0)
+    lambda_cyc          = getattr(cfg, 'lambda_cyc', 1.0)
+    lambda_dist         = getattr(cfg, 'lambda_dist', 0.2)
+    lambda_stab         = getattr(cfg, 'lambda_stab', 0.1) 
+    lambda_geo          = getattr(cfg, 'lambda_geo', 0.0)
+    lambda_skew         = getattr(cfg, 'lambda_skew', 0.1) 
+    lambda_contrastive  = getattr(cfg, 'lambda_contrastive', 0.0) 
+    sinkhorn_eps        = getattr(cfg, 'sinkhorn_eps', 0.1)
 
     if accelerator.is_main_process:
         print(
             f"[SharedAE Coeffs] rec={lambda_rec} | cyc={lambda_cyc} | dist={lambda_dist} | "
-            f"stab={lambda_stab} | geo={lambda_geo} | skew={lambda_skew} |contrastive={lambda_contrastive} | sinkhorn_eps={sinkhorn_eps}"
+            f"stab={lambda_stab} | skew={lambda_skew} | contrastive={lambda_contrastive} | sinkhorn_eps={sinkhorn_eps}"
         )
         
     logged_coeffs_once = False
-
     epoch_sums = {}
     batch_count = 0
 
@@ -271,6 +283,7 @@ def training_loop_shared_ae(
 
         with accelerator.accumulate(translator), accelerator.autocast():
                     
+            # --- 2. FORWARD PASS ---
             sup_ins = process_batch(sup_batch, sup_encs, cfg.normalize_embeddings, device)
             unsup_ins = process_batch(unsup_batch, unsup_enc, cfg.normalize_embeddings, device)
             x = sup_ins[cfg.sup_emb]
@@ -278,9 +291,8 @@ def training_loop_shared_ae(
 
             out = translator(x, y)
 
-            # Use the same coefficients we printed above for consistency
-            use_ot = True
-            ot_eps = sinkhorn_eps
+            # --- 3. LOSS COMPUTATION ---
+            # Using the 'Final Corrected' compute_losses which handles the Skewness & Delayed Anchors
             total, losses = compute_losses(
                 out,
                 x,
@@ -288,14 +300,13 @@ def training_loop_shared_ae(
                 lambda_rec=lambda_rec,
                 lambda_cyc=lambda_cyc,
                 lambda_dist=lambda_dist,
-                lambda_stab=lambda_stab,
-                lambda_geo=lambda_geo,
-                lambda_contrastive=lambda_contrastive,
-                use_ot=use_ot,
-                ot_eps=ot_eps,
-                current_epoch=current_epoch,
+                lambda_stab=lambda_stab,        # VICReg / Variance
+                lambda_skew=lambda_skew,        # Symmetry Breaker
+                lambda_contrastive=lambda_contrastive, # MNN Anchors
+                use_ot=True,
+                ot_eps=sinkhorn_eps,
+                current_epoch=current_epoch,    # Gating for MNN
             )
-
 
             exit_on_nan(total)
             opt.zero_grad()
@@ -304,52 +315,58 @@ def training_loop_shared_ae(
             opt.step()
             scheduler.step()
 
-            # Log
+            # --- 4. LOGGING ---
+            # Base metrics
             metrics = {f"loss/{k}": (v.item() if hasattr(v, 'item') else float(v)) for k, v in losses.items()}
             metrics["loss/total"] = total.item() if hasattr(total, 'item') else float(total)
             metrics["learning_rate"] = opt.param_groups[0]["lr"]
 
-            # Include weighted components (effective contribution) for interpretability.
-            # Handle both old-style (rec_s, rec_t) and new-style (rec) loss keys
+            # Weighted contributions (Interpretability)
+            # Handle split losses (rec_s/rec_t) vs merged losses
             if 'rec_s' in losses:
                 metrics["loss_w/rec"] = lambda_rec * (losses['rec_s'].item() + losses['rec_t'].item())
                 metrics["loss_w/cyc"] = lambda_cyc * (losses['cyc_s'].item() + losses['cyc_t'].item())
+                
+                # Distribution Matching
                 if 'ot' in losses:
                     metrics["loss_w/dist"] = lambda_dist * losses['ot'].item()
-                else:
-                    metrics["loss_w/dist"] = lambda_dist * (losses['ot_s'].item() + losses['ot_t'].item())
-                metrics["loss_w/stab"] = lambda_stab * losses['vic'].item()
-            else:
-                # New-style losses (rec, cyc, skew)
-                metrics["loss_w/rec"] = lambda_rec * losses['rec'].item()
-                metrics["loss_w/cyc"] = lambda_cyc * losses['cyc'].item()
-                metrics["loss_w/skew"] = lambda_skew * losses['skew'].item()
+                
+                # Stability (Variance)
+                if 'vic' in losses:
+                    metrics["loss_w/stab"] = lambda_stab * losses['vic'].item()
+                elif 'var' in losses:
+                    metrics["loss_w/stab"] = lambda_stab * losses['var'].item()
+                
+                # THE ARISTOTLE TERMS: Skewness & Contrastive
+                if 'skew' in losses:
+                    metrics["loss_w/skew"] = lambda_skew * losses['skew'].item()
+                if 'contrastive' in losses:
+                    metrics["loss_w/contrastive"] = lambda_contrastive * losses['contrastive'].item()
 
-            # Log coefficients once per call of this training loop (i == 0)
+            # Log Coeffs Once
             if (i == 0) and (not logged_coeffs_once):
                 coeff_metrics = {
                     "coef/lambda_rec": lambda_rec,
                     "coef/lambda_cyc": lambda_cyc,
                     "coef/lambda_dist": lambda_dist,
                     "coef/lambda_stab": lambda_stab,
-                    "coef/lambda_geo": lambda_geo,
                     "coef/lambda_skew": lambda_skew,
                     "coef/lambda_contrastive": lambda_contrastive,
-                    "coef/sinkhorn_eps": sinkhorn_eps,
                 }
                 for k, v in coeff_metrics.items():
                     logger.logkv(k, v)
                 logged_coeffs_once = True
 
-            # Diagnostic print
-            if accelerator.is_main_process:
+            # Diagnostic Print (Monitor Collapse)
+            if accelerator.is_main_process and i % 50 == 0:
                 with torch.no_grad():
                     z_std = out['z_s'].std(dim=0).mean()
                     z_norm = out['z_s'].norm(dim=1).mean()
-                    if i % 50 == 0: # Print every 50 steps
-                        print(f"[DEBUG] z_norm={z_norm:.4f} | z_std={z_std:.4f}")
+                    # We want z_std ~ 1.0 (VICReg) or ~0.04 (Spherical). 
+                    # If it drops to 0.00, we have collapse.
+                    print(f"[DEBUG] z_norm={z_norm:.4f} | z_std={z_std:.4f}")
 
-            # Update epoch accumulators (raw component losses only)
+            # Update Epoch Sums
             for lk, lv in losses.items():
                 epoch_sums[lk] = epoch_sums.get(lk, 0.0) + (lv.item() if hasattr(lv, 'item') else float(lv))
             epoch_sums['total'] = epoch_sums.get('total', 0.0) + metrics['loss/total']
@@ -358,29 +375,31 @@ def training_loop_shared_ae(
             for k, v in metrics.items():
                 logger.logkv(k, v)
             logger.dumpkvs(force=(hasattr(cfg, 'force_dump') and cfg.force_dump))
-            dataloader_pbar.set_postfix({k: round(v, 4) for k, v in metrics.items() if 'total' in k or k.endswith('rec') or k.endswith('cyc')})
+            
+            # Progress bar
+            pbar_dict = {
+                'loss': round(metrics['loss/total'], 2), 
+                'rec': round(metrics.get('loss/rec_s', 0) + metrics.get('loss/rec_t', 0), 2),
+                'skew': round(metrics.get('loss/skew', 0), 2)
+            }
+            if 'contrastive' in metrics and metrics['loss/contrastive'] > 0:
+                pbar_dict['mnn'] = round(metrics['loss/contrastive'], 2)
+                
+            dataloader_pbar.set_postfix(pbar_dict)
 
-    # After loop: log epoch averages for interpretability
+    # --- 5. EPOCH SUMMARY ---
     if batch_count > 0:
         avg_metrics = {}
         for k, v in epoch_sums.items():
-            if k == 'total':
-                avg_metrics['epoch_avg/loss/total'] = v / batch_count
-            else:
-                avg_metrics[f'epoch_avg/loss/{k}'] = v / batch_count
+            avg_metrics[f'epoch_avg/loss/{k}'] = v / batch_count
+            
         # Grouped averages
-        try:
-            avg_metrics['epoch_avg/loss/rec_total'] = (epoch_sums.get('rec_s',0)+epoch_sums.get('rec_t',0)) / batch_count
-            avg_metrics['epoch_avg/loss/cyc_total'] = (epoch_sums.get('cyc_s',0)+epoch_sums.get('cyc_t',0)) / batch_count
-            if 'ot' in epoch_sums:
-                avg_metrics['epoch_avg/loss/ot_total'] = epoch_sums.get('ot',0) / batch_count
-            else:
-                avg_metrics['epoch_avg/loss/ot_total']  = (epoch_sums.get('ot_s',0)+epoch_sums.get('ot_t',0)) / batch_count
-            avg_metrics['epoch_avg/loss/stab_vic']  = epoch_sums.get('vic',0) / batch_count
-        except Exception:
-            pass
+        avg_metrics['epoch_avg/loss/rec_total'] = (epoch_sums.get('rec_s',0)+epoch_sums.get('rec_t',0)) / batch_count
+        avg_metrics['epoch_avg/loss/cyc_total'] = (epoch_sums.get('cyc_s',0)+epoch_sums.get('cyc_t',0)) / batch_count
+        
         if accelerator.is_main_process:
             print("[SharedAE Epoch Averages] " + ' | '.join(f"{k.split('/')[-1]}={round(v,4)}" for k,v in avg_metrics.items()))
+        
         for k, v in avg_metrics.items():
             logger.logkv(k, v)
         logger.dumpkvs(force=(hasattr(cfg, 'force_dump') and cfg.force_dump))
