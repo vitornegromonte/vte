@@ -15,7 +15,7 @@ import torch
 from torch.optim.lr_scheduler import LambdaLR
 
 from translators.Discriminator import Discriminator
-from translators.SharedAE import SharedAETranslator, compute_losses
+from translators.SharedAE import SharedAETranslator, compute_losses, compute_losses_ablated
 
 # from eval import eval_model
 from utils.collate import MultiencoderTokenizedDataset, TokenizedCollator
@@ -248,6 +248,7 @@ def training_loop_shared_ae(
     lambda_dist = getattr(cfg, 'lambda_dist', 0.2)
     lambda_stab = getattr(cfg, 'lambda_stab', 0.1)
     lambda_geo  = getattr(cfg, 'lambda_geo', 0.0)
+    lambda_skew = getattr(cfg, 'lambda_skew', 0.1)
     lambda_contrastive = getattr(cfg, 'lambda_contrastive', 0.0)
     sinkhorn_eps = getattr(cfg, 'sinkhorn_eps', 0.1)
 
@@ -279,19 +280,28 @@ def training_loop_shared_ae(
             # Use the same coefficients we printed above for consistency
             use_ot = True
             ot_eps = sinkhorn_eps
+            #total, losses = compute_losses(
+            #    out,
+            #    x,
+            #    y,
+            #    lambda_rec=lambda_rec,
+            #    lambda_cyc=lambda_cyc,
+            #    lambda_dist=lambda_dist,
+            #    lambda_stab=lambda_stab,
+            #    lambda_geo=lambda_geo,
+            #    lambda_contrastive=lambda_contrastive,
+            #    use_ot=use_ot,
+            #    ot_eps=ot_eps,
+            #    current_epoch=current_epoch,
+            #)
+            
             total, losses = compute_losses(
                 out,
                 x,
                 y,
                 lambda_rec=lambda_rec,
                 lambda_cyc=lambda_cyc,
-                lambda_dist=lambda_dist,
-                lambda_stab=lambda_stab,
-                lambda_geo=lambda_geo,
-                lambda_contrastive=lambda_contrastive,
-                use_ot=use_ot,
-                ot_eps=ot_eps,
-                current_epoch=current_epoch,
+                lambda_skew=lambda_skew,
             )
 
             exit_on_nan(total)
@@ -323,6 +333,7 @@ def training_loop_shared_ae(
                     "coef/lambda_dist": lambda_dist,
                     "coef/lambda_stab": lambda_stab,
                     "coef/lambda_geo": lambda_geo,
+                    "coef/lambda_skew": lambda_skew,
                     "coef/lambda_contrastive": lambda_contrastive,
                     "coef/sinkhorn_eps": sinkhorn_eps,
                 }

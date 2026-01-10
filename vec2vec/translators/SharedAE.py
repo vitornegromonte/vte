@@ -196,6 +196,76 @@ class SharedAETranslator(nn.Module):
             "z_s_cyc": z_s_cyc, "z_t_cyc": z_t_cyc,
             "x_cyc": x_cyc, "y_cyc": y_cyc,
         }
+
+## SAE ablation
+class SharedAETranslator(nn.Module):
+    """
+    Ablated Model:
+    - Removed LayerNorm (z_norm)
+    - Enforces Spherical Latent Space (L2 Normalize)
+    """
+
+    def __init__(
+        self, 
+        d_s, 
+        d_t, 
+        d_z: int = 512, 
+        hidden_dim: int = 1024, 
+        depth: int = 3
+    ):
+        super().__init__()
+        # Encoders/Decoders (Standard MLP)
+        self.E_s = MLP(d_s, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation=nn.GELU, weight_init='orthogonal')
+        self.D_s = MLP(d_z, d_s, hidden_dim=hidden_dim, depth=depth, residual=True, activation=nn.GELU, weight_init='orthogonal')
+        self.E_t = MLP(d_t, d_z, hidden_dim=hidden_dim, depth=depth, residual=True, activation=nn.GELU, weight_init='orthogonal')
+        self.D_t = MLP(d_z, d_t, hidden_dim=hidden_dim, depth=depth, residual=True, activation=nn.GELU, weight_init='orthogonal')
+
+        # Shared projection 
+        self.shared_proj = MLP(d_z, d_z, hidden_dim=d_z, depth=1, residual=False, activation=nn.GELU, weight_init='orthogonal')
+        
+        # REMOVED: self.z_norm = nn.LayerNorm(d_z)
+
+    def encode_s(self, x): 
+        # Normalize input to stabilize MLP
+        x = F.normalize(x, p=2, dim=-1)
+        z = self.shared_proj(self.E_s(x))
+        # Force onto Unit Sphere (removes scale ambiguity)
+        return F.normalize(z, p=2, dim=-1)
+    
+    def encode_t(self, y):
+        y = F.normalize(y, p=2, dim=-1) 
+        z = self.shared_proj(self.E_t(y))
+        # Force onto Unit Sphere
+        return F.normalize(z, p=2, dim=-1)
+    
+    def decode_s(self, z): 
+        out = self.D_s(z)
+        return F.normalize(out, p=2, dim=-1)
+    
+    def decode_t(self, z): 
+        out = self.D_t(z)
+        return F.normalize(out, p=2, dim=-1)
+
+    def forward(self, x, y):
+        z_s, z_t = self.encode_s(x), self.encode_t(y)
+        x_rec, y_rec = self.decode_s(z_s), self.decode_t(z_t)
+        
+        # Cross-domain mapping
+        y_hat, x_hat = self.decode_t(z_s), self.decode_s(z_t)
+        
+        # Cycle Consistency
+        z_t_cyc = self.encode_t(y_hat)
+        x_cyc = self.decode_s(z_t_cyc)
+        
+        z_s_cyc = self.encode_s(x_hat)
+        y_cyc = self.decode_t(z_s_cyc)
+
+        return {
+            "z_s": z_s, "z_t": z_t,
+            "x_rec": x_rec, "y_rec": y_rec,
+            "x_cyc": x_cyc, "y_cyc": y_cyc,
+        }
+        
         
 #############  Losses 
 
@@ -424,6 +494,27 @@ def cross_domain_contrastive_loss(z_s, z_t, temp=0.1):
     loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.t(), labels)) / 2
     return loss
 
+def loss_non_gaussianity(z: torch.Tensor) -> torch.Tensor:
+    """
+    Maximizes the non-Gaussianity of the latent distribution.
+    
+    Logic:
+    - A Gaussian distribution on a sphere is isotropic (rotationally symmetric).
+    - Maximizing the 4th moment (Kurtosis) forces the data to clump onto 
+      specific axes or clusters, breaking the rotational symmetry O(d).
+    - This corresponds to the 'Symmetry Breaking' theorem from the prover.
+    """
+    # Z is already L2 normalized (on sphere), but we need to center it 
+    # relative to the batch to compute moments correctly.
+    z_cent = z - z.mean(dim=0)
+    
+    # We want to maximize E[z^4]. Since we minimize loss, we take negative.
+    # High kurtosis = "Spiky" distribution (Clusters/Manifolds).
+    # Low kurtosis (Gaussian) = "Smooth" blob.
+    kurtosis = torch.mean(z_cent ** 4)
+    
+    return -kurtosis
+
 #  Example helpers 
 def compute_losses(
     out: dict,
@@ -499,6 +590,43 @@ def compute_losses(
         + lambda_dist * losses['ot'] 
         + lambda_stab * losses['vic']
         + lambda_contrastive * losses['contrastive']
+    )
+
+    losses['total'] = total
+    return total, losses
+
+def compute_losses(
+    out: dict,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    *,
+    lambda_rec=1.0,
+    lambda_cyc=1.0,
+    lambda_skew=0.1, # The navigation compass
+) -> Tuple[torch.Tensor, dict]:
+
+    losses = {}
+
+    # 1. Reconstruction (Geometry Anchor)
+    # Ensures Z retains the info of X/Y
+    losses['rec'] = (loss_rec(x, out['x_rec']) + loss_rec(y, out['y_rec'])) * 0.5
+
+    # 2. Cycle Consistency (Bijectivity Anchor)
+    # Ensures the mapping is invertible (prevents mode collapse)
+    losses['cyc'] = (cycle_consistency_loss(x, out['x_cyc']) + 
+                     cycle_consistency_loss(y, out['y_cyc'])) * 0.5
+
+    # 3. Non-Gaussianity (Rotation Breaker)
+    # This is the only term preventing random rotations.
+    # It forces the 'clouds' of Z_s and Z_t to align their 'spikes' (clusters).
+    losses['skew'] = (loss_non_gaussianity(out['z_s']) + 
+                      loss_non_gaussianity(out['z_t'])) * 0.5
+
+    # Total Loss
+    total = (
+        lambda_rec * losses['rec'] +
+        lambda_cyc * losses['cyc'] +
+        lambda_skew * losses['skew']
     )
 
     losses['total'] = total
