@@ -249,6 +249,7 @@ def training_loop_shared_ae(
     lambda_stab = getattr(cfg, 'lambda_stab', 0.1)
     lambda_geo  = getattr(cfg, 'lambda_geo', 0.0)
     lambda_skew = getattr(cfg, 'lambda_skew', 0.1)
+    lambda_mnn  = getattr(cfg, 'lambda_mnn', 0.0)
     lambda_contrastive = getattr(cfg, 'lambda_contrastive', 0.0)
     sinkhorn_eps = getattr(cfg, 'sinkhorn_eps', 0.1)
 
@@ -280,29 +281,21 @@ def training_loop_shared_ae(
             # Use the same coefficients we printed above for consistency
             use_ot = True
             ot_eps = sinkhorn_eps
-            #total, losses = compute_losses(
-            #    out,
-            #    x,
-            #    y,
-            #    lambda_rec=lambda_rec,
-            #    lambda_cyc=lambda_cyc,
-            #    lambda_dist=lambda_dist,
-            #    lambda_stab=lambda_stab,
-            #    lambda_geo=lambda_geo,
-            #    lambda_contrastive=lambda_contrastive,
-            #    use_ot=use_ot,
-            #    ot_eps=ot_eps,
-            #    current_epoch=current_epoch,
-            #)
-            
             total, losses = compute_losses(
                 out,
                 x,
                 y,
                 lambda_rec=lambda_rec,
                 lambda_cyc=lambda_cyc,
-                lambda_skew=lambda_skew,
+                lambda_dist=lambda_dist,
+                lambda_stab=lambda_stab,
+                lambda_geo=lambda_geo,
+                lambda_contrastive=lambda_contrastive,
+                use_ot=use_ot,
+                ot_eps=ot_eps,
+                current_epoch=current_epoch,
             )
+
 
             exit_on_nan(total)
             opt.zero_grad()

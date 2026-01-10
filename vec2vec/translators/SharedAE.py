@@ -515,7 +515,6 @@ def loss_non_gaussianity(z: torch.Tensor) -> torch.Tensor:
     
     return -kurtosis
 
-#  Example helpers 
 def compute_losses(
     out: dict,
     x: torch.Tensor,
@@ -524,9 +523,10 @@ def compute_losses(
     lambda_rec=1.0,
     lambda_cyc=1.0,
     lambda_dist=0.5,
-    lambda_stab=0.1,
-    lambda_geo=0.2,
-    lambda_contrastive=0.0,
+    lambda_stab=0.1,  # VICReg weight
+    lambda_geo=0.2,   # Unused in snippet, but kept for signature compatibility
+    lambda_skew=1.0,  # NEW: The Rotation Breaker
+    lambda_contrastive=1.0, # Will be gated by epoch
     use_ot=True,
     ot_eps=0.1,
     current_epoch=0,
@@ -534,99 +534,63 @@ def compute_losses(
 
     # Unpack
     z_s, z_t = out['z_s'], out['z_t']
-    y_hat, x_hat = out['y_hat'], out['x_hat'] # Intermediate translations
     
     losses = {}
 
-    # Reconstruction
+    # 1. Reconstruction (Content Preservation)
     losses['rec_s'] = loss_rec(x, out['x_rec'])
     losses['rec_t'] = loss_rec(y, out['y_rec'])
 
-    # Cycle Consistency (Input Space - Correct)
+    # 2. Cycle Consistency (Bijectivity)
     losses['cyc_s'] = cycle_consistency_loss(x, out['x_cyc'])
     losses['cyc_t'] = cycle_consistency_loss(y, out['y_cyc'])
 
-    # Distribution Matching (Sinkhorn)
-    """
-    Align Latents (z), not Outputs (y_hat):
-    - Aligning outputs forces gradients through the Decoder, which is unstable early on.
-    - Aligning Z forces the Encoders to produce the "Interlingua".
-    """
+    # 3. Stability (VICReg) - KEEPS THE LIGHTS ON
+    # Your logs showed this successfully kept z_std ~ 1.0. We keep it.
+    # It acts as "Whitening" (centering + sphering).
+    losses['vic'] = vicreg_loss(
+        z_s, z_t, 
+        sim_coeff=0.0,   # No invariance forced here
+        var_coeff=10.0,  # Keep variance high
+        cov_coeff=1.0    # Keep covariance low (Independence)
+    )
+
+    # 4. Skewness/Kurtosis (The Aristotle Fix) - SHAPES THE SPHERE
+    # VICReg makes it a sphere. This makes it a "spiky" sphere.
+    # This allows OT/MNN to find the correct rotation.
+    losses['skew'] = (loss_non_gaussianity(z_s) + loss_non_gaussianity(z_t)) * 0.5
+
+    # 5. Distribution Matching (Sinkhorn) - COARSE ALIGNMENT
     if use_ot:
         losses['ot'] = sinkhorn_divergence(z_s, z_t, eps=ot_eps)
-        # Optional: Bidirectional (z_t -> z_s) is usually symmetric, 
-        # so one call is often enough, but you can sum them if you prefer.
     else:
         losses['ot'] = torch.tensor(0.0, device=x.device)
 
-    # Stability (VICReg)
-    losses['vic'] = vicreg_loss(
-        z_s, z_t, 
-        sim_coeff=0.0,   # Disables "Invariance" (since we don't have matching pairs)
-        var_coeff=10.0, 
-        cov_coeff=1.0
-    )
+    # 6. MNN Anchors (Contrastive) - FINE ALIGNMENT
+    # CRITICAL CHANGE: Only apply after Epoch 5 (Warmup).
+    # Let Skewness + OT fix the global rotation first.
+    if current_epoch >= 5: 
+        with torch.no_grad():
+            idx_s, idx_t = get_mnn_anchors(z_s.detach(), z_t.detach())
 
-
-    # Contrastive Loss on Mutual Nearest Neighbors (Geometric Anchors)
-    # Find anchors (detached to prevent backprop through selection)
-    with torch.no_grad():
-        idx_s, idx_t = get_mnn_anchors(z_s.detach(), z_t.detach())
-
-    # Apply contrastive loss only if we have sufficient pairs
-    if idx_s is not None and len(idx_s) > 2:  # Need at least 2 pairs
-        # Gather the confident pairs
-        anchor_z_s = z_s[idx_s]
-        anchor_z_t = z_t[idx_t]
-        
-        # "Pull these together, Push others away"
-        losses['contrastive'] = cross_domain_contrastive_loss(anchor_z_s, anchor_z_t, temp=0.1)
+        # Need sufficient pairs to be stable
+        if idx_s is not None and len(idx_s) > 16:
+            anchor_z_s = z_s[idx_s]
+            anchor_z_t = z_t[idx_t]
+            losses['contrastive'] = cross_domain_contrastive_loss(anchor_z_s, anchor_z_t, temp=0.1)
+        else:
+            losses['contrastive'] = torch.tensor(0.0, device=x.device)
     else:
         losses['contrastive'] = torch.tensor(0.0, device=x.device)
 
+    # Total Loss
     total = (
         lambda_rec * (losses['rec_s'] + losses['rec_t'])
         + lambda_cyc * (losses['cyc_s'] + losses['cyc_t'])
         + lambda_dist * losses['ot'] 
         + lambda_stab * losses['vic']
+        + lambda_skew * losses['skew']         # Ensure this is non-zero in your args
         + lambda_contrastive * losses['contrastive']
-    )
-
-    losses['total'] = total
-    return total, losses
-
-def compute_losses(
-    out: dict,
-    x: torch.Tensor,
-    y: torch.Tensor,
-    *,
-    lambda_rec=1.0,
-    lambda_cyc=1.0,
-    lambda_skew=0.1, # The navigation compass
-) -> Tuple[torch.Tensor, dict]:
-
-    losses = {}
-
-    # 1. Reconstruction (Geometry Anchor)
-    # Ensures Z retains the info of X/Y
-    losses['rec'] = (loss_rec(x, out['x_rec']) + loss_rec(y, out['y_rec'])) * 0.5
-
-    # 2. Cycle Consistency (Bijectivity Anchor)
-    # Ensures the mapping is invertible (prevents mode collapse)
-    losses['cyc'] = (cycle_consistency_loss(x, out['x_cyc']) + 
-                     cycle_consistency_loss(y, out['y_cyc'])) * 0.5
-
-    # 3. Non-Gaussianity (Rotation Breaker)
-    # This is the only term preventing random rotations.
-    # It forces the 'clouds' of Z_s and Z_t to align their 'spikes' (clusters).
-    losses['skew'] = (loss_non_gaussianity(out['z_s']) + 
-                      loss_non_gaussianity(out['z_t'])) * 0.5
-
-    # Total Loss
-    total = (
-        lambda_rec * losses['rec'] +
-        lambda_cyc * losses['cyc'] +
-        lambda_skew * losses['skew']
     )
 
     losses['total'] = total
