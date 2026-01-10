@@ -255,7 +255,7 @@ def training_loop_shared_ae(
     if accelerator.is_main_process:
         print(
             f"[SharedAE Coeffs] rec={lambda_rec} | cyc={lambda_cyc} | dist={lambda_dist} | "
-            f"stab={lambda_stab} | geo={lambda_geo} | contrastive={lambda_contrastive} | sinkhorn_eps={sinkhorn_eps}"
+            f"stab={lambda_stab} | geo={lambda_geo} | skew={lambda_skew} |contrastive={lambda_contrastive} | sinkhorn_eps={sinkhorn_eps}"
         )
         
     logged_coeffs_once = False
@@ -317,13 +317,20 @@ def training_loop_shared_ae(
             metrics["learning_rate"] = opt.param_groups[0]["lr"]
 
             # Include weighted components (effective contribution) for interpretability.
-            metrics["loss_w/rec"] = lambda_rec * (losses['rec_s'].item() + losses['rec_t'].item())
-            metrics["loss_w/cyc"] = lambda_cyc * (losses['cyc_s'].item() + losses['cyc_t'].item())
-            if 'ot' in losses:
-                metrics["loss_w/dist"] = lambda_dist * losses['ot'].item()
+            # Handle both old-style (rec_s, rec_t) and new-style (rec) loss keys
+            if 'rec_s' in losses:
+                metrics["loss_w/rec"] = lambda_rec * (losses['rec_s'].item() + losses['rec_t'].item())
+                metrics["loss_w/cyc"] = lambda_cyc * (losses['cyc_s'].item() + losses['cyc_t'].item())
+                if 'ot' in losses:
+                    metrics["loss_w/dist"] = lambda_dist * losses['ot'].item()
+                else:
+                    metrics["loss_w/dist"] = lambda_dist * (losses['ot_s'].item() + losses['ot_t'].item())
+                metrics["loss_w/stab"] = lambda_stab * losses['vic'].item()
             else:
-                metrics["loss_w/dist"] = lambda_dist * (losses['ot_s'].item() + losses['ot_t'].item())
-            metrics["loss_w/stab"] = lambda_stab * losses['vic'].item()
+                # New-style losses (rec, cyc, skew)
+                metrics["loss_w/rec"] = lambda_rec * losses['rec'].item()
+                metrics["loss_w/cyc"] = lambda_cyc * losses['cyc'].item()
+                metrics["loss_w/skew"] = lambda_skew * losses['skew'].item()
 
             # Log coefficients once per call of this training loop (i == 0)
             if (i == 0) and (not logged_coeffs_once):
