@@ -230,13 +230,13 @@ class SharedAETranslator(nn.Module):
         x = F.normalize(x, p=2, dim=-1)
         z = self.shared_proj(self.E_s(x))
         # Force onto Unit Sphere (removes scale ambiguity)
-        return F.normalize(z, p=2, dim=-1)
+        return z
     
     def encode_t(self, y):
         y = F.normalize(y, p=2, dim=-1) 
         z = self.shared_proj(self.E_t(y))
         # Force onto Unit Sphere
-        return F.normalize(z, p=2, dim=-1)
+        return z
     
     def decode_s(self, z): 
         out = self.D_s(z)
